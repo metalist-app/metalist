@@ -100,6 +100,7 @@ test('reference tabs keep their hidden query and label across a page reload', as
     const openAllQuery = 'id-1 OR id-2 OR id-3 OR id-4 OR id-5 OR id-6 OR id-7';
     const sourceNoteId = '11111111-1111-4111-8111-111111111111';
     const orphanNoteId = '22222222-2222-4222-8222-222222222222';
+    const typedNoteId = '33333333-3333-4333-8333-333333333333';
     // A window from before reference views were kept with the tabs left its own
     // record: one view the server does not have yet, one whose tab was searched for
     // something else, and one whose tab no longer exists.
@@ -118,13 +119,16 @@ test('reference tabs keep their hidden query and label across a page reload', as
         edited: createTab('typed by the user'),
         // Its view was recorded nowhere: only its search says what it is.
         orphan: createTab(orphanNoteId),
+        // A search context the user made, whose search is a note ID: never taken as a page.
+        typedNoteId: createTab(typedNoteId),
     };
-    const tabOrder = ['original', 'refs', 'src', 'edited', 'orphan'];
+    const tabOrder = ['original', 'refs', 'src', 'edited', 'orphan', 'typedNoteId'];
     ModeContext.hydrateTabState({ activeTabId: 'refs', tabs: serverTabs, tabOrder }, { emitUpdate: false });
 
     restoreReferenceNavigation({
         tabs: serverTabs,
         tabOrder,
+        pageTabIds: ['refs', 'src', 'edited', 'orphan'],
         referenceViews: {
             refs: { fromTabId: 'original', referenceQuery: openAllQuery, viewKind: 'references', originScope: ORIGIN_SCOPE },
         },
@@ -137,6 +141,7 @@ test('reference tabs keep their hidden query and label across a page reload', as
     assert.equal(storage.getItem(STORAGE_KEY), null, 'the window\'s own record moved to the server');
     assert.equal(getReferenceNavigationLabelForTab('orphan'), 'Source note', 'no tab is named by a note ID');
     assert.equal(getReferenceNavigationLabelForTab('edited'), '');
+    assert.equal(getReferenceNavigationLabelForTab('typedNoteId'), '', 'a search context is no page');
     const views = getReferenceViewsPayload();
     assert.deepEqual(Object.keys(views).toSorted(), ['orphan', 'refs', 'src']);
     assert.deepEqual(views.src, { fromTabId: 'refs', referenceQuery: sourceNoteId, viewKind: 'source', originScope: ORIGIN_SCOPE });
@@ -156,7 +161,7 @@ test('reference tabs keep their hidden query and label across a page reload', as
     popReferenceNavigationEntryForActiveTab();
     assert.deepEqual(Object.keys(getReferenceViewsPayload()).toSorted(), ['orphan', 'refs', 'src']);
 
-    assert.throws(() => restoreReferenceNavigation({ tabs: serverTabs, tabOrder, referenceViews: {} }), /only once/);
+    assert.throws(() => restoreReferenceNavigation({ tabs: serverTabs, tabOrder, pageTabIds: [], referenceViews: {} }), /only once/);
 });
 
 test('a missing reference navigation record restores nothing', async (t) => {

@@ -81,8 +81,7 @@ def test_a_search_context_on_a_reference_page_does_not_take_a_search_link(live_d
     # context beside it (the maintainer, 2026-11-14).
     _note("10000000-0000-4000-8000-000000000001", None, content="<div>Trip plan</div>", tags="")
     misc = _search_in_active_context("miscellaneous")
-    page = tab_state_store.create_tab(view_id=VIEW, is_page=False, copy_from_tab_id=misc, copies_view=False)["newTabId"]
-    tab_state_store.set_search(view_id=VIEW, tab_id=page, search_query="10000000-0000-4000-8000-000000000001")
+    page = tab_state_store.create_tab(view_id=VIEW, is_page=True, copy_from_tab_id=misc, copies_view=False)["newTabId"]
     state = tab_state_store.snapshot(view_id=VIEW)
     tabs = state["tabs"]
     save_as_the_page_does(tab_state_store, view_id=VIEW,

@@ -7,7 +7,7 @@ import { areScrollAnchorsEqual, computeScrollAnchor } from './scroll-anchor-serv
 import { CommandGate } from './command-gate-service.js';
 import { buildSessionHeaders } from '../../session-auth.js';
 import { AuthenticationRequiredError } from '../../client-state-api.js';
-import { getReferenceViewsPayload, restoreReferenceNavigation } from './reference-source-navigation-service.js';
+import { getReferenceViewsPayload, recordPageTabsFromServer, restoreReferenceNavigation } from './reference-source-navigation-service.js';
 import { recordDateFiltersFromServer } from './date-range-filter-service.js';
 import { recordFileFiltersFromServer } from './file-filter-service.js';
 import { recordTreeShownFromServer } from './virtual-folders-state.js';
@@ -302,6 +302,7 @@ function recordServerAnswer(state) {
     recordFileFiltersFromServer(state);
     recordTreeShownFromServer(state);
     ModeContext.recordUntaggedViewsFromServer(state);
+    recordPageTabsFromServer(state);
     // Searches other views are typing (multi-view step 4).
     recordSearchLocks(state.searchLocks);
     if (moduleState.tabShownOnServer !== state.activeTabId) {

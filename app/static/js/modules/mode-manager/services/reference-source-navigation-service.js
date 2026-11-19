@@ -38,6 +38,9 @@ const NOTE_ID_SEPARATOR = /\s+OR\s+/;
 const moduleState = ApplicationState.createFields('reference-source-navigation-service', {
     referenceNavigationStack: [],
     hasRestoredFromSession: false,
+    // This view's reference pages, as the server last named them (tab state's pageTabIds), with or
+    // without a record here. A search context is never one, whatever its search.
+    pageTabIds: Object.freeze([]),
     // Reference pages gone back from, to go forward to again (docs/ready-to-build/reference-cards.md,
     // "Reference pages", §2), by search context: { referenceQuery, viewKind, scrollY }, the next
     // one forward last. Each context keeps its own while MetaList is open (2026-11-14); a reload, or
@@ -242,8 +245,23 @@ function hasReferenceNavigationEntryForTab(tabId) {
     return moduleState.referenceNavigationStack.some((entry) => entry.toTabId === tabId);
 }
 
+/** Take this view's reference pages from a tab-state answer (every one carries pageTabIds). */
+export function recordPageTabsFromServer(serverState) {
+    if (!serverState || typeof serverState !== 'object') {
+        throw new Error('recordPageTabsFromServer requires the server tab state');
+    }
+    const tabIds = serverState.pageTabIds;
+    if (!Array.isArray(tabIds) || !tabIds.every((tabId) => typeof tabId === 'string')) {
+        throw new Error('Tab state response missing pageTabIds');
+    }
+    if (JSON.stringify(tabIds) !== JSON.stringify(moduleState.pageTabIds)) {
+        moduleState.pageTabIds = Object.freeze([...tabIds]);
+    }
+}
+
 function isUnclaimedReferenceTab(tabId) {
     return !hasReferenceNavigationEntryForTab(tabId)
+        && moduleState.pageTabIds.includes(tabId)
         && noteIdsOfReferenceQuery(ModeContext.tabs[tabId].searchQuery).length > 0;
 }
 
@@ -273,12 +291,13 @@ function originScopeOfAdoptingTab(fromTabId) {
 }
 
 /**
- * A tab whose search is only note IDs but that no reference view claims (its
- * window's record was lost, or the tab it came from was closed, as 0.29.0 left it)
+ * A page of this view (the server names them) whose search is only note IDs but that no
+ * reference view claims (its window's record was lost, or the tab it came from was closed)
  * becomes one again, opened from the nearest tab before it, so no tab is ever named by
  * an ID; ◀ goes there. Opened from a page, it goes on that page's way, so it belongs to
  * that page's search context; a page is never a search context. With no other tab it
- * stays as it is.
+ * stays as it is. A search context is never taken, even with a search of note IDs alone: the
+ * user made it one (agreed 2026-11-18).
  */
 function adoptOrphanReferenceTabs() {
     const tabOrder = ModeContext.tabOrder;
@@ -324,6 +343,7 @@ export function restoreReferenceNavigation(serverState) {
         throw new Error('Reference navigation restore requires an empty in-memory stack');
     }
     moduleState.hasRestoredFromSession = true;
+    recordPageTabsFromServer(serverState);
     const candidates = Object.entries(serverViews)
         .map(([toTabId, view]) => copyReferenceNavigationEntry({ ...view, toTabId }));
     const storedValue = sessionStorage.getItem(REFERENCE_NAVIGATION_STORAGE_KEY);

@@ -53,6 +53,7 @@ async function harness() {
         computeScrollAnchor: () => null, areScrollAnchorsEqual: (a, b) => a === b,
         restoreReferenceNavigation: (state) => restoredReferenceTabs.push(state.tabs),
         getReferenceViewsPayload: () => structuredClone(referencePages),
+        recordPageTabsFromServer: () => {},
         recordDateFiltersFromServer: () => {},
         recordFileFiltersFromServer: () => {},
         recordTreeShownFromServer: () => {},

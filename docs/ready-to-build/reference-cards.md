@@ -12,7 +12,7 @@ Following a reference stops opening a search context. It turns to a **reference 
   - **Backlinks** (called Referenced by until 2026-11-13): from the count badge.
   - **Reference:** one AI citation.
   - **All references:** every citation in an AI answer.
-- Each one is an ordinary search context whose search is a hidden note-ID query (`reference-source-navigation-service.js:47`), kept in tab state `referenceViews` on the server.
+- Each one is an ordinary search context whose search is a hidden note-ID query (`reference-source-navigation-service.js:47`), kept in tab state `referenceViews` on the server. (Since 2026-11-18 it is a tab made as a page, its view's own, named in tab state `pageTabIds`; a search context the user made is never one, even with a note ID as its search.)
   - **Effect 1:** every link followed adds an entry to the list of search contexts. The maintainer had six "Source note" entries after clicking around.
   - **Effect 2:** a new note takes the search's positive terms as tags (`docs/ui/search-semantics.md`, new notes), so a note added in one of these views is **tagged with the linked note's UUID**. An outdent there probably does the same through "Moving Notes During Search".
 - The view shows the linked note, its ancestors and its descendants; other sibling branches are redacted to grey bars.

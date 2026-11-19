@@ -538,6 +538,9 @@ class TabStateStore:
             "tabs": tabs,
             "tabOrder": visible,
             "referenceViews": deepcopy(place["referenceViews"]),
+            # The view's own pages, with or without a record: the only tabs the page may take
+            # back as pages (adoptOrphanReferenceTabs).
+            "pageTabIds": [tab_id for tab_id in visible if tab_id in self._page_owners],
             "dateFilters": {tab_id: deepcopy(value) for tab_id, value in self._date_filters.items() if tab_id in tabs},
             "fileFilters": {tab_id: value for tab_id, value in self._file_filters.items() if tab_id in tabs},
             "treeShown": place["treeShown"],
@@ -1032,8 +1035,8 @@ class TabStateStore:
     ) -> Dict[str, object]:
         """Tab tab_id of this view is a reference page: it shows reference_query (a view_kind),
         opened from from_tab_id in the search context of origin_scope. The one way a view opens a
-        page in a tab, changes what a page shows or takes a tab of note ids no view owns as its
-        page (docs/future-plans/one-writer-refactoring.md, idea 1). The page's search becomes the
+        page in a tab, changes what a page shows or gives a page of its own that lost its record
+        another tab to be opened from (docs/future-plans/one-writer-refactoring.md, idea 1). The page's search becomes the
         reference, so the two never disagree. Closing the tab ends the page (delete_tab), and so
         does another search in it (set_search)."""
         named = (("tabId", tab_id), ("fromTabId", from_tab_id))
@@ -1061,14 +1064,11 @@ class TabStateStore:
                 snapshot = self._snapshot_locked(view_id)
                 snapshot["changed"] = False
                 return snapshot
-            # A tab of note ids no view owns (0.29.0 left them, and a place lost with its window)
-            # becomes this view's page; a search context with a search of its own is no page.
+            # Only a tab made as a page is one (create_tab, or one saved before views): a search
+            # context never becomes a page, whatever its search, so no view loses it from its list
+            # and no page is left opened from a tab its view cannot see (agreed 2026-11-18).
             if tab_id not in self._page_owners:
-                is_unowned_page = _is_note_id_search(self._tabs[tab_id]["searchQuery"]) and (
-                    self._tabs[tab_id]["searchQuery"] == reference_query
-                )
-                if not is_unowned_page or self._context_ids_locked() == [tab_id]:
-                    raise InputRejected("tabId must reference a reference page")
+                raise InputRejected("tabId must reference a reference page")
             page = {
                 "fromTabId": from_tab_id, "referenceQuery": reference_query, "viewKind": view_kind,
                 "originScope": scope,

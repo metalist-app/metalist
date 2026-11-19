@@ -391,3 +391,114 @@ def test_a_page_opened_from_a_context_deleted_a_moment_ago_changes_nothing() -> 
 
     assert answer["changed"] is False
     assert answer["referenceViews"] == {}
+
+
+# A search context never becomes a reference page (finding 2 of the simulation, cases agreed
+# 2026-11-18): only a tab made as a page is one, and the answer names the view's pages
+# (pageTabIds), so the page takes back as its own only tabs the server holds as its pages.
+def _recipes_holding_note_ids(store: TabStateStore, search: str) -> tuple[str, str]:
+    groceries, recipes = _two_contexts(store)
+    store.set_search(view_id=MAC, tab_id=recipes, search_query=search)
+    return groceries, recipes
+
+
+def _ask_to_take_as_a_page(store: TabStateStore, view: str, *, context: str, from_tab: str, search: str) -> None:
+    store.set_reference_page(
+        view_id=view, tab_id=context, from_tab_id=from_tab, reference_query=search, view_kind="source",
+        origin_scope=_scope(from_tab),
+    )
+
+
+# Cases 1, 2 and 7: a context whose search is one note ID, or several, asked for as a page.
+@pytest.mark.parametrize("search", [RECIPE, f"{RECIPE} OR {MENU}"], ids=["one note id", "several note ids"])
+def test_a_context_holding_note_ids_is_refused_as_a_page(search: str) -> None:
+    store = TabStateStore()
+    groceries, recipes = _recipes_holding_note_ids(store, search)
+    version = store.snapshot(view_id=MAC)["version"]
+
+    with pytest.raises(InputRejected):
+        _ask_to_take_as_a_page(store, MAC, context=recipes, from_tab=groceries, search=search)
+
+    for view in (MAC, PHONE):
+        now = store.snapshot(view_id=view)
+        assert now["tabOrder"] == [groceries, recipes]
+        assert now["referenceViews"] == {}
+        assert now["pageTabIds"] == []
+        assert now["version"] == version
+
+
+# Case 3: the phone has a page opened from the context.
+def test_another_views_page_keeps_the_context_it_was_opened_from() -> None:
+    store = TabStateStore()
+    groceries, recipes = _recipes_holding_note_ids(store, RECIPE)
+    phone_page = _open_page(store, PHONE, from_tab=recipes, context=recipes, note=MENU)
+
+    with pytest.raises(InputRejected):
+        _ask_to_take_as_a_page(store, MAC, context=recipes, from_tab=groceries, search=RECIPE)
+
+    phone = store.snapshot(view_id=PHONE)
+    assert phone["tabOrder"] == [groceries, recipes, phone_page]
+    assert phone["referenceViews"][phone_page]["fromTabId"] == recipes
+    assert phone["referenceViews"][phone_page]["originScope"]["scopeTabId"] == recipes
+
+
+# Case 4: the view's own page opened from the context.
+def test_a_views_own_page_keeps_the_context_it_was_opened_from() -> None:
+    store = TabStateStore()
+    groceries, recipes = _recipes_holding_note_ids(store, RECIPE)
+    mac_page = _open_page(store, MAC, from_tab=recipes, context=recipes, note=MENU)
+
+    with pytest.raises(InputRejected):
+        _ask_to_take_as_a_page(store, MAC, context=recipes, from_tab=groceries, search=RECIPE)
+
+    mac = store.snapshot(view_id=MAC)
+    assert mac["referenceViews"] == {mac_page: {
+        "fromTabId": recipes, "referenceQuery": MENU, "viewKind": "source", "originScope": _scope(recipes),
+    }}
+    assert mac["pageTabIds"] == [mac_page]
+
+
+# Case 6: a page of the view's own that no record claims is still named as its page.
+def test_a_page_left_without_its_record_is_still_named_as_the_views_page() -> None:
+    store = TabStateStore()
+    groceries, travel = _two_contexts(store)
+    recipe_page = _open_page(store, MAC, from_tab=travel, context=travel, note=RECIPE)
+
+    store.delete_tab(view_id=PHONE, tab_id=travel)
+
+    assert store.snapshot(view_id=MAC)["referenceViews"] == {}
+    assert store.snapshot(view_id=MAC)["pageTabIds"] == [recipe_page]
+    assert store.snapshot(view_id=PHONE)["pageTabIds"] == []
+
+
+# Case 8: the server restarts with a context holding a note id.
+def test_a_context_holding_a_note_id_is_a_context_after_a_restart() -> None:
+    store = TabStateStore()
+    groceries, recipes = _recipes_holding_note_ids(store, RECIPE)
+
+    restarted = _restarted()
+
+    for view in (MAC, PHONE):
+        now = restarted.snapshot(view_id=view)
+        assert now["tabOrder"] == [groceries, recipes]
+        assert now["pageTabIds"] == []
+
+
+# Case 9: a tab of note ids saved before views, which no record claims, is the first view's page.
+def test_a_tab_of_note_ids_saved_before_views_is_named_as_the_first_views_page() -> None:
+    saved = json.loads((Path(__file__).parent.parent / "fixtures" / "upgrade" / "tab-state-v0.29.0.json").read_text())
+    store = TabStateStore()
+    store._apply_snapshot_locked(store._deserialize_snapshot_json(json.dumps(saved)))
+
+    assert saved["activeTabId"] in store.snapshot(view_id=MAC)["pageTabIds"]
+    assert store.snapshot(view_id=PHONE)["pageTabIds"] == []
+
+
+def test_each_view_is_told_its_own_pages_only() -> None:
+    store = TabStateStore()
+    groceries, travel = _two_contexts(store)
+    mac_page = _open_page(store, MAC, from_tab=groceries, context=groceries, note=RECIPE)
+    phone_page = _open_page(store, PHONE, from_tab=travel, context=travel, note=MENU)
+
+    assert store.snapshot(view_id=MAC)["pageTabIds"] == [mac_page]
+    assert store.snapshot(view_id=PHONE)["pageTabIds"] == [phone_page]

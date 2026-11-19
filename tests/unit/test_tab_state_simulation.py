@@ -377,7 +377,6 @@ class TabStateUnderSeveralViews(RuleBasedStateMachine):
             return
         tab_id, from_tab_id = self._tab(view, index), self._tab(view, from_index)
         readings = self._read_all()
-        showing = {other for other in self.joined if readings[other]["activeTabId"] == tab_id}
         # The search context the page belongs to, as the page knows it: the tab it is opened from,
         # or that tab's own when it is a page.
         known = self.known[view]
@@ -393,15 +392,8 @@ class TabStateUnderSeveralViews(RuleBasedStateMachine):
             opened_from = known["referenceViews"][opened_from]["fromTabId"]
         if tab_id in (scope_tab_id, opened_from):
             return
-        # A search context of note ids is taken as the view's page even while pages are opened
-        # from it, which leaves them opened from a page, or from a tab their view no longer sees
-        # (found 2026-11-18, see the plan's findings). Left out until that is decided.
-        is_context_with_pages = tab_id in self._contexts(readings) and any(
-            tab_id in (page["fromTabId"], page["originScope"]["scopeTabId"])
-            for reading in readings.values() for page in reading["referenceViews"].values()
-        )
-        if is_context_with_pages:
-            return
+        # A search context never becomes a page, whatever its search (agreed 2026-11-18).
+        is_context = tab_id in self._contexts(readings)
         origin = known["tabs"][scope_tab_id]
         scope = {
             "scopeTabId": scope_tab_id, "searchQuery": origin["searchQuery"], "sortMode": origin["sortMode"],
@@ -409,12 +401,7 @@ class TabStateUnderSeveralViews(RuleBasedStateMachine):
         }
 
         def allowed(other: str, change: Change) -> bool:
-            if other == view:
-                return change in (("page", tab_id), ("tab", tab_id, "searchQuery"))
-            # A tab of note ids no view owned becomes this view's page: the others no longer list it.
-            if change == ("active",):
-                return other in showing
-            return change[1:] == (tab_id,) and change[0] in ("removed", "dateFilter", "fileFilter", "untagged", "lock", "page")
+            return other == view and change in (("page", tab_id), ("tab", tab_id, "searchQuery"))
 
         answer = self._ask(
             view,
@@ -423,6 +410,9 @@ class TabStateUnderSeveralViews(RuleBasedStateMachine):
             ),
             allowed,
         )
+        if is_context:
+            # Refused, or "no change" when it names a tab deleted a moment ago.
+            assert answer is None or answer["changed"] is False, "a search context was taken as a reference page"
         if answer is not None and answer["changed"]:
             assert answer["referenceViews"][tab_id]["referenceQuery"] == answer["tabs"][tab_id]["searchQuery"] == note
 
@@ -510,6 +500,7 @@ class TabStateUnderSeveralViews(RuleBasedStateMachine):
             assert len(set(order)) == len(order) and set(order) == set(reading["tabs"]), "the order lists each tab once"
             assert [tab_id for tab_id in order if tab_id in contexts] == contexts, "every view has the contexts in one order"
             assert reading["activeTabId"] in order, f"{view} shows a tab it cannot see"
+            assert reading["pageTabIds"] == [tab_id for tab_id in order if tab_id not in contexts], f"{view} is told its own pages"
             for key in ("dateFilters", "fileFilters", "untaggedViews", "referenceViews"):
                 assert set(reading[key]) <= set(order), f"{key} names a tab {view} cannot see"
             for tab_id, page in reading["referenceViews"].items():

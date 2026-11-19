@@ -55,6 +55,8 @@ class FakeHTMLElement {
     }
 }
 
+const NOTE_IDS_ALONE = /^\s*[0-9a-f-]{36}(?:\s+OR\s+[0-9a-f-]{36})*\s*$/i;
+
 /** The modules after `state` loaded, with a stand-in page for what they draw. */
 export async function loadSavedTabs(t, state) {
     const originals = {
@@ -77,6 +79,11 @@ export async function loadSavedTabs(t, state) {
     ModeContext.hydrateTabState(
         { activeTabId: state.activeTabId, tabs: state.tabs, tabOrder: state.tabOrder }, { emitUpdate: false },
     );
-    navigation.restoreReferenceNavigation(state);
+    // The server names as the first view's pages the tabs a record claims and the tabs of note
+    // IDs alone that none does (tab_state.py, _apply_snapshot_locked).
+    const pageTabIds = state.tabOrder.filter((tabId) => (
+        Object.hasOwn(state.referenceViews, tabId) || NOTE_IDS_ALONE.test(state.tabs[tabId].searchQuery)
+    ));
+    navigation.restoreReferenceNavigation({ ...state, pageTabIds });
     return { ModeContext, navigation };
 }
