@@ -2,6 +2,17 @@
 
 What changed in each MetaList release, newest first.
 
+## Changes in 0.31.0
+
+- **Deleting a folder with its notes deletes their files too.** Delete Folder… says what goes ("Also delete its 1289 notes and their 212 files (1.8 GB)") and deletes the notes and those files in one step; the box now starts ticked. Delete Notes (Current View)… does the same. Before, the files stayed in the vault, and in every backup, until Trim Unused Files… was run. A file a note that stays also uses is kept. Deleting a single note still keeps its files, so ⌘Z can bring it back.
+- **Back Up Now… offers to trim first.** When the vault holds files no note uses, the dialog shows "Trim N unused files (size) first"; ticked, they are deleted before the backup is made.
+- **No red error after restoring the vault you have open.** Looking at another browser tab before closing "Backup restored" showed a red error, and Export Report… on it failed with a second one.
+- **Export Report… works after your session has ended,** with a report of the error and what led to it, and nothing from the vault. If no report can be made, MetaList says so and the error stays on screen.
+- The red error has a Copy button, and messages now appear below it instead of underneath it.
+- Search contexts keep up more reliably when MetaList is open in several tabs or on your phone: each change (a search, an order, a context made or deleted) is sent on its own, so one tab can no longer put back what another changed.
+- MetaList's startup lists the network address of each vault shared on the network.
+- Fixed: a red error when a redraw shortened the text under the caret; typing straight after a click in the tag bar was lost; Back Up Now… could not be left while it loaded; an error about a search context another tab had just deleted.
+
 ## Changes in 0.30.1
 
 - **MetaList on Windows is fast again when it is doing two things at once.** In 0.30.0, on Windows, MetaList slowed to a crawl whenever work overlapped: an AI question while the list searched, or anything just after unlocking or importing into a large vault. An AI answer over a large vault that took minutes takes seconds.
