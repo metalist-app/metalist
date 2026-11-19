@@ -57,6 +57,12 @@ class BacklinkIndex:
         """Every id some note references: notes, missing notes and files."""
         return frozenset(self._incoming)
 
+    def targets_referenced_only_by(self, note_ids: frozenset[str]) -> frozenset[str]:
+        """The ids these notes reference that no other note does: what nothing would reference
+        any more with these notes gone."""
+        referenced = {target_id for note_id in note_ids if note_id in self._outgoing for target_id in self._outgoing[note_id]}
+        return frozenset(target_id for target_id in referenced if set(self._incoming[target_id]) <= note_ids)
+
     def has_backlinks(self, note_id: str) -> bool:
         return note_id in self._incoming
 

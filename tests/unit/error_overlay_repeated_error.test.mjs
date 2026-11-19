@@ -50,6 +50,7 @@ test('the same fatal error twice keeps showing it, and raises nothing of its own
     fakeDocument.body = new FakeElement();
     globalThis.document = fakeDocument;
     globalThis.HTMLElement = FakeElement;
+    globalThis.ResizeObserver = class { observe() {} };
     globalThis.fetch = async () => ({ status: 200, ok: true, json: async () => ({ stale: false }) });
 
     showFatalError('Snapshot answer is malformed', 'at refresh (ui-actions.js:88)', 'Error');

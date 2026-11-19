@@ -6,6 +6,8 @@ The goal: when a red fatal overlay shows, MetaList keeps a report detailed enoug
 
 ---
 
+**Added 2026-11-18** (the maintainer's dad, after a restore ended his session): Export Report… from a page whose session has ended makes the report as the login page does (`/problem-reports/unsaved`), with the error, commands and requests and nothing from the vault (no notes, search or inputs: the server cannot read the vault's tags to check them). A report that cannot be made is said in a calm message and the error shown stays (it used to replace it). The red error has **Copy** beside Export Report… (there is no right-click menu; if the browser refuses the clipboard the text is selected), and floating messages sit below it (`--fatal-overlay-height`). While the page waits to reload after restoring the open vault, a request the server refuses shows no red error (`error-overlay.js`, `isRefusedAfterRestore`). Suites: `problem-reports`, `restore-session`.
+
 ## 0. Today (from the code, checked 2026-11-11)
 
 - **The overlay** (`app/static/js/modules/error-overlay.js`, `showFatalError`) shows the message and stack only. Nothing reaches the server; a reload loses it.

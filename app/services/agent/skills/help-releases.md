@@ -5,6 +5,17 @@ What changed in each MetaList version, newest first, from its changelog
 Compare with installed_version from the help lookup to tell the user whether
 they already have a release. Version info offers updates (see the data topic).
 
+## 0.31.0
+
+- **Deleting a folder with its notes deletes their files too.** Delete Folder… says what goes ("Also delete its 1289 notes and their 212 files (1.8 GB)") and deletes the notes and those files in one step; the box now starts ticked. Delete Notes (Current View)… does the same. Before, the files stayed in the vault, and in every backup, until Trim Unused Files… was run. A file a note that stays also uses is kept. Deleting a single note still keeps its files, so ⌘Z can bring it back.
+- **Back Up Now… offers to trim first.** When the vault holds files no note uses, the dialog shows "Trim N unused files (size) first"; ticked, they are deleted before the backup is made.
+- **No red error after restoring the vault you have open.** Looking at another browser tab before closing "Backup restored" showed a red error, and Export Report… on it failed with a second one.
+- **Export Report… works after your session has ended,** with a report of the error and what led to it, and nothing from the vault. If no report can be made, MetaList says so and the error stays on screen.
+- The red error has a Copy button, and messages now appear below it instead of underneath it.
+- Search contexts keep up more reliably when MetaList is open in several tabs or on your phone: each change (a search, an order, a context made or deleted) is sent on its own, so one tab can no longer put back what another changed.
+- MetaList's startup lists the network address of each vault shared on the network.
+- Fixed: a red error when a redraw shortened the text under the caret; typing straight after a click in the tag bar was lost; Back Up Now… could not be left while it loaded; an error about a search context another tab had just deleted.
+
 ## 0.30.1
 
 - **MetaList on Windows is fast again when it is doing two things at once.** In 0.30.0, on Windows, MetaList slowed to a crawl whenever work overlapped: an AI question while the list searched, or anything just after unlocking or importing into a large vault. An AI answer over a large vault that took minutes takes seconds.
@@ -193,19 +204,5 @@ they already have a release. Version info offers updates (see the data topic).
 - Tag suggestions: a web address in a note counts only by its site's name, so a YouTube link no longer suggests `HTTPS` or `V-neuron`; one letter alone no longer names a tag with longer words. A suggestion without evidence now says only what is true (what you typed matches, which part of its name the note has) instead of "Nothing in this note points to it".
 - Fixed: accepting a Grammarly suggestion while editing could undo itself and end editing, when Grammarly drew its card in an element MetaList did not recognise.
 - Removed the "Make pseudo-suggestions" test item from the note menu.
-
-## 0.18.0
-
-- Right-click a tag suggestion, in the tag bar or the search bar, to see why it is suggested. The menu starts with **Why suggested**: the words of the note that name the tag (or a synonym), the tags it goes with and on how many notes, notes sharing this note's tags, whether it already applies through a parent or a rule, or that nothing in the note points to it; then how often the tag is used. Search suggestions also say how often you worked with a tag lately (when that put it first), what your search so far finds, or what leaving it out removes. The reasons are MetaList's own ranking, not the AI's, and appear instantly.
-- Fixed: right-clicking a suggestion closed the list and opened the menu of the note underneath (or the browser's own menu). The list, your typed letters and the cursor now stay as they were, and `Escape` on an open right-click menu closes only the menu instead of also leaving edit mode.
-
-## 0.17.0
-
-- A whole-view summary that fails or is stopped keeps the batches it finished; saying "try that again" continues it, running only the remaining batches with the original question.
-- The AI remembers a failed request and the explanation you saw, so you can say "try that again" or ask why it failed. Every failure explanation now ends with where the run stopped: the step, how long it had been there, and the step before.
-- Until OpenAI responds, the chat says "Waiting for OpenAI…" instead of "Thinking…". A request OpenAI never answers fails after 15 seconds at Off or Low thinking (60 s Medium, 120 s High) with a message to check the internet connection, instead of waiting up to 10 minutes.
-- Questions that do not read your notes answer faster in large views: the view is no longer processed note by note up front. With diagnostic activity on, the first line shows how long preparing the view took, and each step shows how much note text it read.
-- Summaries no longer fail because the AI left out its list of supporting notes (OpenAI now enforces the answer format), and a retry tells the model what was wrong.
-- Fixed: pressing Stop ended in a fatal error; stray boxes and "cite" appeared around some citations; a step OpenAI never answered was described as "the reply was empty".
 
 Older versions are in the releases-2 help topic.

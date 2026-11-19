@@ -14,6 +14,7 @@ from app.api.request_auth import require_request_auth_token
 from app.api.transactions import transactional_route
 from app.services.undo_state import reset_undo_stack
 from app.services.input_errors import InputRejected
+from app.services.files_of_deleted_notes import files_of_notes_to_delete
 from app.services.tab_state import tab_state_store
 from app.services.virtual_folders import (
     NO_FOLDER, all_folder_tags, chosen_folders_of, folder_note_counts, folder_note_totals, folder_paths, is_folder_tag,
@@ -50,6 +51,8 @@ class DeleteVirtualFolderRequest(TypedDict):
 
 class FolderNotesRequest(TypedDict):
     folder: Text
+    # The tab asking: its own undo history is cleared by the deletion, so it keeps no file.
+    clientId: Identifier
 
 
 class ChooseFolderRequest(TypedDict):
@@ -178,5 +181,7 @@ def count_virtual_folder_notes(request: Request, body: FolderNotesRequest) -> Di
     require_request_auth_token(request)
     if not is_folder_tag(body["folder"]):
         raise InputRejected(f"{body['folder']} is not a folder.")
-    return {"noteCount": notes_in_folder(body["folder"]).note_count}
+    deletion = notes_in_folder(body["folder"])
+    files = files_of_notes_to_delete(deletion.top_note_ids, client_id=body["clientId"])
+    return {"noteCount": deletion.note_count, "fileCount": files.count, "fileBytes": files.size_bytes}
 

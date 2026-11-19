@@ -867,7 +867,12 @@ def stored_size_of_files(file_ids: set[str]) -> int:
 
 
 def trim_unused_files(*, kept_file_ids: frozenset[str]) -> TrimUnusedFilesResult:
-    deleted_ids = sorted(unused_file_ids(kept_file_ids=kept_file_ids))
+    return delete_unused_files(unused_file_ids(kept_file_ids=kept_file_ids))
+
+
+def delete_unused_files(file_ids: set[str]) -> TrimUnusedFilesResult:
+    """Delete these files, which the caller found unused (unused_file_ids), with their content."""
+    deleted_ids = sorted(file_ids)
     with begin_file_writer() as connection:
         deleted_blob_ids = fetch_every_blob_id_of_files(connection, deleted_ids)
         deleted_count = delete_files(connection, deleted_ids)

@@ -295,6 +295,12 @@ def undo_history_operations() -> List[dict]:
     return [op for ctx in _clients.values() for op in [*ctx.history, *ctx.redo]]
 
 
+def undo_history_operations_of_other_clients(client_id: str) -> List[dict]:
+    """The undo and redo operations of every tab but client_id's: what stays once a bulk
+    deletion has cleared that tab's own history (files_of_deleted_notes.py)."""
+    return [op for other_id, ctx in _clients.items() if other_id != client_id for op in [*ctx.history, *ctx.redo]]
+
+
 def reset_all_undo_state() -> None:
     """Discard every client's undo/redo payloads, which may contain plaintext notes and files."""
     _clients.clear()

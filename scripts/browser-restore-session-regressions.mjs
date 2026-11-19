@@ -11,6 +11,8 @@ import { waitForAppQuiet } from './browser-app-idle.mjs';
 // and every other request after it is answered "not logged in".
 
 const SETTLE_MS = 300;
+// The checks a tab shown again runs: backup, trim, password audit, reminders.
+const REMINDER_CHECKS = 4;
 const BACKUP = Object.freeze({
     backup_id: 'b1', filename: 'default-backup.tar.gz', namespace: 'default',
     created_at: '2026-10-24T10:00:00Z', size_bytes: 2048, source: 'internal',
@@ -77,4 +79,17 @@ export async function checkRestoreSession(page) {
     assert(await page.evaluate(() => document.body.textContent.includes('Close this modal to reload the app')),
         'the dialog still says the backup was restored');
     console.log('PASS restoring the open vault keeps the page off Session locked');
+
+    // The tab is shown again (after a look at another tab) while the dialog waits to be closed (the maintainer's
+    // dad, 2026-11-18): the reminder checks that run then (backup, trim, password audit,
+    // reminders) are refused too, and must show no red error.
+    const refusedBefore = await page.evaluate(() => window.restoreSessionTest.unauthorized);
+    await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+    await page.waitForFunction(before => window.restoreSessionTest.unauthorized >= before.refused + before.checks,
+        {}, {refused: refusedBefore, checks: REMINDER_CHECKS});
+    await waitForAppQuiet(page, SETTLE_MS);
+    assert.equal(await page.$('#fatal-error-overlay'), null, 'a request refused after the restore should show no red error');
+    assert(await page.evaluate(() => document.body.textContent.includes('Close this modal to reload the app')),
+        'the dialog still says the backup was restored');
+    console.log('PASS requests refused after a restore show no red error');
 }

@@ -5,6 +5,7 @@ import { BaseModal } from './base-modal.js';
 import { CONFIG } from '../config.js';
 import { buildSessionHeaders } from '../session-auth.js';
 import { escapeHtml } from '../html-escape.js';
+import { formatByteSize } from '../byte-sizes.js';
 import { actionRowHtml } from './action-row.js';
 import { failureFieldId, showErrorDialog, showErrorDialogFor, showOpenFailure } from './error-dialog.js';
 
@@ -29,6 +30,8 @@ function parseResponseError(responseBody, statusCode) {
 
 
 
+const SINGLE_FILE = 1;
+
 export class BackupSettingsModal extends BaseModal {
     constructor() {
         super('backupSettingsModal', 'backup-settings-modal');
@@ -52,6 +55,11 @@ export class BackupSettingsModal extends BaseModal {
             suggestedFolders: [],
             retentionCountText: '30',
             statusMessage: '',
+            // The files no note uses in the vault in use, as Trim Unused Files counts them: with
+            // any, the dialog offers to trim them before backing up (the maintainer, 2026-11-18).
+            unusedFileCount: 0,
+            unusedFileBytes: 0,
+            trimsUnusedFilesFirst: false,
         };
     }
 
@@ -189,6 +197,17 @@ export class BackupSettingsModal extends BaseModal {
                     </div>
                 </div>`;
 
+        // Offered only when there are some; unticked at first: trimming deletes for good.
+        const unusedFileCount = Number.isInteger(state.unusedFileCount) ? state.unusedFileCount : 0;
+        const unusedFilesWord = unusedFileCount === SINGLE_FILE ? 'file' : 'files';
+        const trimFirstHtml = unusedFileCount === 0 ? '' : `
+                <div class="form-group backup-settings-trim-first">
+                    <label class="backup-settings-checkbox-row" title="Files no note uses are deleted for good, so this backup and later ones are smaller">
+                        <input type="checkbox" id="backup-settings-trim-first" ${state.trimsUnusedFilesFirst === true ? 'checked' : ''} ${loading || saving ? 'disabled' : ''}>
+                        <span>Trim ${unusedFileCount} unused ${unusedFilesWord} (${escapeHtml(formatByteSize(state.unusedFileBytes))}) first</span>
+                    </label>
+                </div>`;
+
         let effectiveStatusMessage = statusMessage;
         if (effectiveStatusMessage.length === 0 && loading) {
             effectiveStatusMessage = 'Loading backup settings...';
@@ -220,6 +239,7 @@ export class BackupSettingsModal extends BaseModal {
                     <input type="number" id="backup-settings-retention-count" min="1" step="1" value="${escapeHtml(retentionCountText)}" ${loading || saving ? 'disabled' : ''}>
                 </div>
 
+                ${trimFirstHtml}
                 ${actionRowHtml({
                     alternative: null,
                     cancel: {
@@ -342,6 +362,13 @@ export class BackupSettingsModal extends BaseModal {
             };
         }
 
+        const trimFirst = document.getElementById('backup-settings-trim-first');
+        if (trimFirst instanceof HTMLInputElement) {
+            trimFirst.onchange = () => {
+                this.updateModalState({ trimsUnusedFilesFirst: trimFirst.checked });
+            };
+        }
+
         const runButton = document.getElementById('backup-settings-run-btn');
         if (runButton instanceof HTMLButtonElement) {
             runButton.onclick = async () => {
@@ -389,8 +416,11 @@ export class BackupSettingsModal extends BaseModal {
             statusMessage: 'Loading backup settings...',
         });
         this.renderModalContent();
-        const settled = await this._authRequest(CONFIG.API.BACKUP.SETTINGS, 'GET', null).then(
-            (payload) => ({ ok: true, payload }),
+        const settled = await Promise.all([
+            this._authRequest(CONFIG.API.BACKUP.SETTINGS, 'GET', null),
+            this._authRequest(CONFIG.API.FILES.UNUSED, 'GET', null),
+        ]).then(
+            ([payload, unused]) => ({ ok: true, payload, unused }),
             (error) => { rethrowUnexpectedError(error); return ({ ok: false, error }); },
         );
         // Left while the settings were read: nothing to draw them in.
@@ -423,6 +453,10 @@ export class BackupSettingsModal extends BaseModal {
         if (!Array.isArray(payload.suggested_folders)) {
             throw new Error('Backup settings response missing suggested_folders');
         }
+        const unused = settled.unused;
+        if (!unused || !Number.isInteger(unused.count) || !Number.isInteger(unused.size_bytes)) {
+            throw new Error('Unused files response is missing count or size_bytes');
+        }
         this.updateModalState({
             loading: false,
             pickingFolder: false,
@@ -433,6 +467,8 @@ export class BackupSettingsModal extends BaseModal {
             suggestedFolders: payload.suggested_folders,
             retentionCountText: String(payload.retention_count),
             statusMessage: '',
+            unusedFileCount: unused.count,
+            unusedFileBytes: unused.size_bytes,
         });
         this.renderModalContent();
     }
@@ -540,6 +576,8 @@ export class BackupSettingsModal extends BaseModal {
 
         this._decision.result = {
             action: 'run_backup',
+            // Trim Unused Files runs before the backup is made (createBackup).
+            trimUnusedFilesFirst: state.trimsUnusedFilesFirst === true,
             settings: {
                 folder_path: folderPath,
                 selected_namespaces: selectedNamespaces,

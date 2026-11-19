@@ -3,13 +3,13 @@ import { runThenCleanUp } from './suite-outcome.mjs';
 import { waitForAppQuiet } from './browser-app-idle.mjs';
 import { clickAndSelectAll } from './browser-select-field.mjs';
 
-// Deleting notes in bulk checks the trim reminder at once (docs/ui/command-palette.md,
-// `Trim Reminder`; the maintainer, 2026-11-12): Delete Folder with its notes, and Delete Notes
-// (Current View)…, clear undo, so the deleted notes' files are unused right away, and the card
-// shows as the deletion finishes, with no click or key after it, once unused files reach 10 MB.
-// Below that, nothing shows. Driven as a person does it: right-click the folder, Delete
-// Folder…, tick "Also delete its notes", Delete Folder and Notes; or search, the command
-// palette's Delete Notes (Current View)…, confirm.
+// Deleting notes in bulk takes their files with them (the maintainer, 2026-11-18; before, the
+// files stayed until Trim Unused Files and only a reminder card showed): Delete Folder with its
+// notes, and Delete Notes (Current View)…, say how many files and how much space go, and
+// delete them in the same step. The folder dialog's box starts ticked. A file a note that
+// stays also uses is kept, and a file unused before the deletion is left for Trim. Driven as
+// a person does it: right-click the folder, Delete Folder…, Delete Folder and Notes; or
+// search, the command palette's Delete Notes (Current View)…, confirm.
 
 const REQUESTS_QUIET_MS = 300;
 const SETTLE_MS = 300;
@@ -17,16 +17,14 @@ const PALETTE_OPEN_MS = 400;
 // Wide enough for the tree beside the column (scripts/browser-edge-tab-regressions.mjs).
 const WINDOW = {width: 1440, height: 900};
 const MIB = 1024 * 1024;
-// Below the reminder's 10 MB, and enough to take the total over it.
-const SMALL_FILE_MIB = 1;
-const LARGE_FILE_MIB = 6;
-const SMALL_SIZES = Object.freeze([SMALL_FILE_MIB]);
-const LARGE_SIZES = Object.freeze([LARGE_FILE_MIB, LARGE_FILE_MIB]);
-const TOTAL_MIB = SMALL_FILE_MIB + LARGE_FILE_MIB + LARGE_FILE_MIB;
-const SMALL_FOLDER = 'Trimtestsmall/';
-const LARGE_FOLDER = 'Trimtestlarge/';
-const SMALL_TAG = 'trimtestsmall';
-const LARGE_TAG = 'trimtestlarge';
+// Two notes' files, and a file no note uses from before the deletion.
+const FILE_SIZES_MIB = Object.freeze([1, 6]);
+const TOTAL_MIB = 7;
+const OLD_UNUSED_MIB = 1;
+const FOLDER = 'Trimtestfiles/';
+const KEPT_FOLDER = 'Trimtestkept/';
+const TAG = 'trimtestfiles';
+const KEPT_TAG = 'trimtestkept';
 const DELETE_IN_VIEW = 'Delete Notes (Current View)';
 const CARD = '#trim-reminder-notice';
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -86,13 +84,6 @@ async function cardText(page) {
   }, CARD);
 }
 
-async function expectedCardText(page, bytes) {
-  return page.evaluate(async bytes => {
-    const {trimReminderMessage} = await import('/static/js/modules/trim-reminder-schedule.js');
-    return trimReminderMessage(bytes);
-  }, bytes);
-}
-
 async function isTreeShown(page) {
   return page.evaluate(() => !document.getElementById('virtual-folders').hidden);
 }
@@ -112,22 +103,95 @@ async function searchFor(page, query) {
   await pause(SETTLE_MS);
 }
 
-async function deleteFolderAndNotes(page, folder) {
+async function openDeleteFolder(page, folder) {
   await page.click(`#virtual-folders [data-virtual-folder="${folder}"]`, {button: 'right'});
   await page.waitForSelector('#context-menu.is-visible', {visible: true});
   const item = await page.evaluateHandle(() => [...document.querySelectorAll('#context-menu.is-visible .context-menu-item')]
     .find(node => node.querySelector('.context-menu-item-label').textContent.trim() === 'Delete Folder…'));
   await item.click();
   await page.waitForSelector('#delete-folder-notes', {visible: true});
-  await page.click('#delete-folder-notes');
-  await page.click('#delete-folder-submit-btn');
-  // No click or key after this: the card must come from the deletion itself.
-  await idle(page);
-  await pause(SETTLE_MS);
 }
 
-async function deleteNotesInView(page, tag) {
-  await searchFor(page, tag);
+function folderDialog(page) {
+  return page.evaluate(() => ({
+    isTicked: document.getElementById('delete-folder-notes').checked,
+    text: document.querySelector('.delete-folder-notes-toggle span').textContent.trim(),
+    button: document.getElementById('delete-folder-submit-btn').textContent.trim(),
+  }));
+}
+
+async function sizeText(page, mib) {
+  return page.evaluate(async bytes => {
+    const {formatByteSize} = await import('/static/js/modules/byte-sizes.js');
+    return formatByteSize(bytes);
+  }, mib * MIB);
+}
+
+function notesThere(page, ids) {
+  return page.evaluate(async ids => {
+    const found = [];
+    for (const id of ids) {
+      const response = await fetch(`/api2/notes/${id}/preview`, {headers: {'X-Metalist-Tab-Id': sessionStorage.getItem('metalist_tab_id')}});
+      if ((await response.json()).status === 'ready') found.push(id);
+    }
+    return found;
+  }, ids);
+}
+
+// A file no note uses, there before the deletion: not the deletion's to take.
+async function uploadUnused(page, mib) {
+  await page.evaluate(async bytes => {
+    const {FilesAPI} = await import('/static/js/modules/api-client.js');
+    await FilesAPI.uploadFile(new File([new Uint8Array(bytes)], 'trim-test-old.bin', {type: 'application/octet-stream'}));
+  }, mib * MIB);
+}
+
+async function checkDeleteFolder(page) {
+  await startFromNothingUnused(page);
+  const ids = await fileNotes(page, FOLDER, FILE_SIZES_MIB);
+  await uploadUnused(page, OLD_UNUSED_MIB);
+  await reload(page);
+
+  // Cases 1 and 2: ticked at first, the files said with their size, and deleted with the notes.
+  await openDeleteFolder(page, FOLDER);
+  assert.deepEqual(await folderDialog(page), {
+    isTicked: true,
+    text: `Also delete its 2 notes and their 2 files (${await sizeText(page, TOTAL_MIB)})`,
+    button: 'Delete Folder and Notes',
+  });
+  await page.click('#delete-folder-submit-btn');
+  await idle(page);
+  await pause(SETTLE_MS);
+  assert.deepEqual(await notesThere(page, ids), [], 'Delete Folder and Notes: the notes are gone');
+  // Case 9: only the file unused from before is left for Trim; the deleted notes' files went.
+  assert.equal(await unusedBytes(page), OLD_UNUSED_MIB * MIB, 'Delete Folder and Notes: the notes\' files went with them');
+  assert.equal(await cardText(page), null, 'no trim card: nothing of the deletion is left to trim');
+
+  // Case 3: unticked, the folder alone comes off; its notes and their files stay.
+  const kept = await fileNotes(page, `${KEPT_FOLDER} ${KEPT_TAG}`, [OLD_UNUSED_MIB]);
+  await reload(page);
+  await openDeleteFolder(page, KEPT_FOLDER);
+  await page.click('#delete-folder-notes');
+  assert.equal((await folderDialog(page)).button, 'Delete Folder');
+  await page.click('#delete-folder-submit-btn');
+  await idle(page);
+  await pause(SETTLE_MS);
+  assert.deepEqual(await notesThere(page, kept), kept, 'Delete Folder: its notes stay');
+  assert.equal(await unusedBytes(page), OLD_UNUSED_MIB * MIB, 'Delete Folder: its notes\' files stay in use');
+  // Deleted as a view's notes, so its file goes with it (a single delete would keep the file for undo).
+  await searchFor(page, KEPT_TAG);
+  await page.evaluate(async count => {
+    const {NotesAPI} = await import('/static/js/modules/api-client.js');
+    await NotesAPI.deleteNotesInView(count);
+  }, kept.length);
+  await searchFor(page, '');
+}
+
+async function checkDeleteInView(page) {
+  await startFromNothingUnused(page);
+  const ids = await fileNotes(page, TAG, FILE_SIZES_MIB);
+  await reload(page);
+  await searchFor(page, TAG);
   await page.keyboard.down('Meta');
   await page.keyboard.press('/');
   await page.keyboard.up('Meta');
@@ -136,49 +200,16 @@ async function deleteNotesInView(page, tag) {
   await pause(SETTLE_MS);
   await page.keyboard.press('Enter');
   await page.waitForSelector('#confirmation-submit-btn', {visible: true});
+  const said = await page.$eval('#confirmation-modal .alphabetize-root-notes-warning p', text => text.textContent);
+  assert.ok(said.includes(`Their 2 files (${await sizeText(page, TOTAL_MIB)}) are deleted too.`), `the confirmation says the files: ${said}`);
   await page.click('#confirmation-submit-btn');
-  // No click or key after this: the card must come from the deletion itself.
+  await page.waitForFunction(() => [...document.querySelectorAll('.floating-message-text')]
+    .some(text => text.textContent === 'Deleted 2 notes and 2 files.'));
   await idle(page);
   await pause(SETTLE_MS);
-}
-
-// One way of deleting, below 10 MB and then over it: { label, prepare(sizes), remove(small) }.
-async function checkBelowThenAbove(page, way) {
-  await startFromNothingUnused(page);
-  await way.prepare(true, SMALL_SIZES);
-  await reload(page);
-  assert.equal(await cardText(page), null, `${way.label}, below: no card before the deletion`);
-  await way.remove(true);
-  assert.equal(await unusedBytes(page), SMALL_FILE_MIB * MIB, `${way.label}, below: the deleted note's file is unused`);
-  assert.equal(await cardText(page), null, `${way.label}, below: still no card, 1 MB being under 10 MB`);
-
-  await way.prepare(false, LARGE_SIZES);
-  await reload(page);
-  assert.equal(await cardText(page), null, `${way.label}, above: no card before the deletion`);
-  await way.remove(false);
-  const bytes = await unusedBytes(page);
-  assert.equal(bytes, TOTAL_MIB * MIB, `${way.label}, above: every deleted note's file is unused`);
-  assert.equal(await cardText(page), await expectedCardText(page, bytes), `${way.label}, above: the card shows at once, with the total`);
-}
-
-const DELETE_FOLDER = Object.freeze({
-  label: 'Delete Folder',
-  prepare: (page, isSmall, sizes) => fileNotes(page, isSmall ? SMALL_FOLDER : LARGE_FOLDER, sizes),
-  remove: (page, isSmall) => deleteFolderAndNotes(page, isSmall ? SMALL_FOLDER : LARGE_FOLDER),
-});
-
-const DELETE_IN_VIEW_WAY = Object.freeze({
-  label: DELETE_IN_VIEW,
-  prepare: (page, isSmall, sizes) => fileNotes(page, isSmall ? SMALL_TAG : LARGE_TAG, sizes),
-  remove: (page, isSmall) => deleteNotesInView(page, isSmall ? SMALL_TAG : LARGE_TAG),
-});
-
-function onPage(page, way) {
-  return {
-    label: way.label,
-    prepare: (isSmall, sizes) => way.prepare(page, isSmall, sizes),
-    remove: isSmall => way.remove(page, isSmall),
-  };
+  assert.deepEqual(await notesThere(page, ids), [], `${DELETE_IN_VIEW}: the notes are gone`);
+  assert.equal(await unusedBytes(page), 0, `${DELETE_IN_VIEW}: the notes' files went with them`);
+  assert.equal(await cardText(page), null, 'no trim card');
 }
 
 export async function checkDeleteTrim(page) {
@@ -187,10 +218,10 @@ export async function checkDeleteTrim(page) {
   const treeWasShown = await isTreeShown(page);
   await runThenCleanUp('delete trim', async () => {
     if (!treeWasShown) await clickFoldersTab(page);
-    await checkBelowThenAbove(page, onPage(page, DELETE_FOLDER));
-    console.log('PASS Delete Folder: the trim reminder shows at once above 10 MB, and not below');
-    await checkBelowThenAbove(page, onPage(page, DELETE_IN_VIEW_WAY));
-    console.log('PASS Delete Notes (Current View): the trim reminder shows at once above 10 MB, and not below');
+    await checkDeleteFolder(page);
+    console.log('PASS Delete Folder: ticked at first, says its notes\' files, and deletes them with the notes');
+    await checkDeleteInView(page);
+    console.log('PASS Delete Notes (Current View): says the notes\' files and deletes them with the notes');
   }, async () => {
     await searchFor(page, '');
     if ((await isTreeShown(page)) !== treeWasShown) await clickFoldersTab(page);
