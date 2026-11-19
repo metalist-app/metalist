@@ -205,7 +205,6 @@ const FOLDER_ON_ITS_OWN_TEXT = 'Drop a folder on its own.';
 // Dropped text files ask Note or File; Markdown ones open the import walkthrough
 // (docs/ready-to-build/files-shown-not-copied.md §5).
 const DROPPED_TEXT_FILE_RE = /\.(md|markdown|txt)$/i;
-const DROPPED_MARKDOWN_FILE_RE = /\.(md|markdown)$/i;
 // Between dropped text files' text put into one note.
 const TEXT_FILES_SEPARATOR = '\n\n';
 // How often a text file's question looks whether the drop's other files are in.
@@ -2720,8 +2719,7 @@ function handleDropEvent(event) {
         });
         return;
     }
-    // Dropped text files ask first: a note or a file; with a Markdown file among them, the
-    // import walkthrough at its Markdown screen (docs/ready-to-build/files-shown-not-copied.md §5).
+    // Dropped text files ask first: a note or a file (docs/ready-to-build/files-shown-not-copied.md §5).
     if (droppedFiles.some(isDroppedTextFile)) {
         void dropWithTextFiles(event, droppedFiles, intoFolder).catch((error) => {
             rethrowUnexpectedError(error);
@@ -2759,8 +2757,8 @@ function isDroppedTextFile(file) {
 
 // Dropped text files (files-shown-not-copied.md §5, checks 22 to 26). Into a note being edited:
 // one question, then the text (or the cards) at the drop point, then the other files. Elsewhere
-// the other files come in at once, then the text files ask Note or File, or, with a Markdown
-// file among them, all of them go through the walkthrough's Markdown screen.
+// the other files come in at once, then the text files ask Note or File, a Markdown file as any
+// other (the maintainer, 2026-11-19; it went straight to the walkthrough's Markdown screen).
 async function dropWithTextFiles(event, droppedFiles, intoFolder) {
     const textFiles = droppedFiles.filter(isDroppedTextFile);
     const otherFiles = droppedFiles.filter((file) => !isDroppedTextFile(file));
@@ -2780,10 +2778,6 @@ async function dropWithTextFiles(event, droppedFiles, intoFolder) {
     if (otherFiles.length > 0) {
         dropFilesThere(event, otherFiles, intoFolder);
         await untilNothingElseAsks();
-    }
-    if (textFiles.some((file) => DROPPED_MARKDOWN_FILE_RE.test(file.name))) {
-        await CommandPalette.openImportWizardWithDroppedFiles(textFiles, importFolderOf(intoFolder));
-        return;
     }
     const choice = await promptForTextDropChoice(textFiles.map((file) => file.name));
     if (choice === null) return;
@@ -2838,11 +2832,17 @@ async function makeNotesOfTextFiles(textFiles, intoFolder) {
         if (blockRootNoteCreation('top', 'dropTextFilesAsNotes')) {
             return;
         }
+        const named = textFiles.map((file, index) => ({ name: file.name, text: texts[index] }));
         // Each goes to the top: the last made first.
-        for (const text of [...texts].reverse()) {
+        for (const { name, text } of named.reverse()) {
             requireCreatedNoteId(await createNoteAtTop(), 'dropTextFileNote');
-            insertPlainTextAtCurrentSelection(text);
             const noteId = ModeContext.currentNoteId;
+            // A Markdown file's note is tagged @markdown, so it shows as Markdown.
+            const noteElement = DOMUtils.getNoteById(noteId);
+            const tagsBefore = getTagBarValue(noteElement);
+            const tagsAfter = tagsAfterTextDrop({ tags: tagsBefore, fileNames: [name], noteIsEmpty: true });
+            if (tagsAfter !== tagsBefore) setTagBarValue(noteElement, tagsAfter);
+            insertPlainTextAtCurrentSelection(text);
             await actionSaveNote(noteId);
             if (intoFolder !== null || texts.length > LONE_FILE) {
                 await actionSaveAndExitEditingWithoutRefreshing();

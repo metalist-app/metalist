@@ -10,8 +10,8 @@ const DROP_REQUESTS_QUIET_MS = 800;
 const DROP_SETTLE_TIMEOUT_MS = 15000;
 
 // Dropped files are shown, not copied (docs/ready-to-build/files-shown-not-copied.md, agreed
-// 2026-11-03): a dropped file is a card, with no preview note under it. A dropped .md file
-// opens the import walkthrough at its Markdown screen; a dropped .txt file asks Note or File
+// 2026-11-03): a dropped file is a card, with no preview note under it. A dropped .md or .txt
+// file asks Note or File
 // (checks 22 to 26). Before, every text, CSV or JSON file got a preview child.
 
 async function idle(page) {
@@ -159,12 +159,21 @@ export async function checkFileDropPreviews(page) {
     await track();
     assert.deepEqual([kept.pills, kept.children.length], [[['.TXT', 'kept.txt']], 0], 'txt, File: a card alone');
 
-    // A .md file alone opens the import walkthrough at its Markdown screen.
+    // A .md file alone asks Note or File as a .txt does, no longer opening Import (the
+    // maintainer, 2026-11-19); Note: a note at the top, tagged @markdown, shown as Markdown.
     await drop(page, '#notes-container', [{name: 'readme.md', type: 'text/markdown', text: '# Hello\n\n- one\n- two'}], 'center');
-    await page.waitForSelector('#import-wizard [data-choice-key="markdownAs"]', {visible: true, timeout: 10000});
-    await page.keyboard.press('Escape');
-    await page.waitForFunction(() => document.getElementById('import-wizard').style.display !== 'block', {timeout: 10000});
-    await idle(page);
+    assert.deepEqual(await textDropChoice(page), {title: 'Text file', files: 'readme.md', focused: 'text-drop-choice-note'},
+      'md with no note open: it asks Note or File');
+    assert.equal(await page.evaluate(() => [...document.querySelectorAll('#import-wizard')].some(wizard => wizard.style.display === 'block')), false,
+      'md with no note open: Import does not open');
+    await page.click('#text-drop-choice-note');
+    await settle(page);
+    const topTags = await page.$eval('.note.editing .note-tag-bar-input', input => input.value);
+    assert.ok(/(^|\s)@markdown(\s|$)/.test(topTags), `md with no note open, Note: tagged @markdown (tags: ${topTags})`);
+    await leaveEditing(page);
+    assert.equal(await page.$eval('#notes-container > .note > .note-content', content => content.querySelector('h1') !== null), true,
+      'md with no note open, Note: a note at the top shown as Markdown');
+    await track();
 
     // A .md file dropped into an empty note being edited, made a note: its text goes in and the
     // note is tagged @markdown, so it shows as Markdown (the maintainer, 2026-11-18).

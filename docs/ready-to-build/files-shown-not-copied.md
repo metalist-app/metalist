@@ -147,7 +147,7 @@ Decided with the maintainer the same day: a click on a card outside its buttons 
 
 **E. Dropped `.md` and `.txt`**
 22. A `.txt` alone asks Note or File, Note focused; Note makes a note at the top with its text, File a card, Cancel nothing.
-23. A `.md` alone opens the walkthrough at its Markdown screen, its sample from the file; on a tree folder, that folder's tag.
+23. (Changed 2026-11-19: a dropped `.md` asks Note or File as a `.txt` does, and Note tags the note `@markdown`; see `docs/ui/references.md`. The original check follows.) A `.md` alone opens the walkthrough at its Markdown screen, its sample from the file; on a tree folder, that folder's tag.
 24. (Proposed) Several are asked once: any `.md` among them, the walkthrough takes them all; all `.txt`, the Note or File question covers them all.
 25. With other files: the text files ask, the rest come in at once.
 26. Into a note being edited: the same question; Note puts the text at the drop point, File the card.
