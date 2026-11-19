@@ -104,7 +104,17 @@ function installPreviewTestDom(t) {
     class FakeImageElement extends FakeElement {
         constructor(classNames = []) {
             super(classNames);
-            this.src = '';
+            this._src = '';
+            // As the server writes the tag, before there is a picture.
+            this.loading = 'lazy';
+            this.loadingWhenItsAddressWasSet = null;
+        }
+
+        get src() { return this._src; }
+
+        set src(address) {
+            this.loadingWhenItsAddressWasSet = this.loading;
+            this._src = address;
         }
 
         // Images never finish loading here, so no size is recorded.
@@ -269,6 +279,9 @@ test('preview hydration propagates internal defects and clears pending requests 
     FilesAPI.downloadFile = async () => ({blob: new Blob(['png'], {type: 'image/png'}), filename: 'retry.png'});
     await hydrateImageFilePreviews(documentRoot);
     assert.equal(fixture.target.dataset.previewState, 'loaded');
+    // Its bytes are already fetched: it loads at once, in every browser (Firefox sometimes never
+    // loaded one left lazy; GitHub's edit-previews failures, 2026-11-16 and 2026-11-19).
+    assert.equal(fixture.image.loadingWhenItsAddressWasSet, 'eager');
 });
 
 test('preview hydration handles only expected request failures', async (t) => {

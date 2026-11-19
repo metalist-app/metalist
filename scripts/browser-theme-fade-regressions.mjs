@@ -35,7 +35,7 @@ async function changeTheme(page, themes) {
     await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
     await Promise.all(document.getAnimations().map(animation => animation.finished));
     const fades = new Set();
-    const start = performance.now();
+    let appliedAt = null;
     await new Promise(resolve => {
       const sample = () => {
         for (const animation of document.getAnimations()) {
@@ -46,13 +46,16 @@ async function changeTheme(page, themes) {
             fades.add(animation);
           }
         }
-        if (performance.now() - start < sampleMs) requestAnimationFrame(sample);
+        // Sampled until the changes have been applied and a fade's length has passed since: a
+        // change is saved before it shows, which on a slow machine took longer than a fixed
+        // watch from the request (GitHub, 2026-11-19: still Dark 600 ms after asking for Light).
+        if (appliedAt === null || performance.now() - appliedAt < sampleMs) requestAnimationFrame(sample);
         else resolve();
       };
       requestAnimationFrame(sample);
       const {CommandPalette} = window.__themeFadePalette;
-      for (const theme of themes.slice(0, -1)) void CommandPalette.applyPreference('pref.theme', theme);
-      void CommandPalette.applyPreference('pref.theme', themes.at(-1));
+      const changes = themes.map(theme => CommandPalette.applyPreference('pref.theme', theme));
+      void Promise.allSettled(changes).then(() => { appliedAt = performance.now(); });
     });
     return {
       theme: document.documentElement.getAttribute('data-theme'),

@@ -140,6 +140,8 @@ async function showPreviews(target, results) {
     }
     const images = EXCALIDRAW_PREVIEW_VARIANTS.map((variant, index) => {
         const image = imageOf(target, variant);
+        // Its bytes are already here, so it loads now (file-image-preview-service.js says why).
+        image.loading = 'eager';
         image.src = results[index].objectUrl;
         noteObjectUrlShown(image, results[index].objectUrl);
         return image;

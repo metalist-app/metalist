@@ -11,7 +11,7 @@ What changed in each MetaList release, newest first.
 - The red error has a Copy button, and messages now appear below it instead of underneath it.
 - Search contexts keep up more reliably when MetaList is open in several tabs or on your phone: each change (a search, an order, a context made or deleted) is sent on its own, so one tab can no longer put back what another changed.
 - MetaList's startup lists the network address of each vault shared on the network.
-- Fixed: a red error when a redraw shortened the text under the caret; typing straight after a click in the tag bar was lost; Back Up Now… could not be left while it loaded; an error about a search context another tab had just deleted.
+- Fixed: a red error when a redraw shortened the text under the caret; typing straight after a click in the tag bar was lost; Back Up Now… could not be left while it loaded; an error about a search context another tab had just deleted; in Firefox, a picture that now and then stayed empty.
 
 ## Changes in 0.30.1
 
