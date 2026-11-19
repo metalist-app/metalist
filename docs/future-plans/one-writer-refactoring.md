@@ -88,6 +88,8 @@ With the contexts owned in one place, a unit test can throw thousands of random 
 
 ### 3. Check before merging
 
+**Adopted 2026-11-18** (the maintainer, after 0.31.0's push to main went red in two suites the changes had not touched): COMMIT FEATURE pushes the branch and runs both workflows on it (`scripts/check_branch.py`); "Publish to PyPI" runs its matrix by hand on any branch and still publishes only for a version tag. At COMMIT FEATURE, not at each checkpoint. Rules in `AGENTS.md`, "Check Before Merging".
+
 Run both GitHub workflows on the branch at each checkpoint, before it merges. They take about ten minutes when machines are free, and the repository is public. `main` then confirms what the branch already showed. This is process, not refactoring, and the cheapest item here: about an afternoon. It reverses the rule "the full matrix runs once, on main" in `AGENTS.md`. Worth doing before idea 1 begins, so each step of that move is checked on Windows and in Firefox before it lands.
 
 ### 4. In the browser: apply the server's answers in order
