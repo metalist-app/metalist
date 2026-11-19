@@ -14,7 +14,6 @@ app/api/routes/auth.py: Incompatible types in assignment (expression has type "d
 app/api/routes/auth.py: Incompatible types in assignment (expression has type "dict[str, str] | None", variable has type "dict[str, object] | None")  [assignment]
 app/api/routes/backups.py: No overload variant of "int" matches argument type "object"  [call-overload]
 app/api/routes/files.py: Argument "viewport" to "CmdFinishFileEditSession" has incompatible type "Viewport"; expected "dict[str, object]"  [arg-type]
-app/api/routes/notes.py: Argument "tabs" to "update" of "TabStateStore" has incompatible type "dict[str, Tab]"; expected "dict[str, dict[str, object]]"  [arg-type]
 app/api/routes/notes.py: Argument 1 to "_require_note_present" has incompatible type "str | None"; expected "str"  [arg-type]
 app/api/routes/notes.py: Argument 1 to "generate_diff_ops" has incompatible type "WarmView"; expected "ViewState"  [arg-type]
 app/api/routes/notes.py: Incompatible types in assignment (expression has type "None", variable has type "str")  [assignment]

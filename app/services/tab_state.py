@@ -1092,9 +1092,9 @@ class TabStateStore:
             place = self._place_locked(view_id)
             visible = set(self._visible_tab_ids_locked(view_id))
             needed = (*named, ("originScope.scopeTabId", scope["scopeTabId"]))
-            for name, value in needed:
-                if value not in visible and value not in self._gone_tab_ids:
-                    raise InputRejected(f"{name} must reference an existing tab")
+            for needed_name, needed_tab in needed:
+                if needed_tab not in visible and needed_tab not in self._gone_tab_ids:
+                    raise InputRejected(f"{needed_name} must reference an existing tab")
             # Asked before the view heard a tab was deleted or the page closed: nothing to change,
             # as for a search (set_search).
             if any(value in self._gone_tab_ids for _name, value in needed):
@@ -1115,7 +1115,7 @@ class TabStateStore:
                 raise InputRejected("originScope.scopeTabId must reference a search context")
             if tab_id in _tabs_gone_back_through(views, from_tab_id):
                 raise InputRejected("a reference page is never opened from a page opened from it")
-            page = {
+            page: Dict[str, object] = {
                 "fromTabId": from_tab_id, "referenceQuery": reference_query, "viewKind": view_kind,
                 "originScope": scope,
             }

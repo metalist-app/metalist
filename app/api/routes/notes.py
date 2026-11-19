@@ -583,7 +583,7 @@ def set_reference_page(payload: SetReferencePageRequest, view_id: ViewId) -> Dic
 @transactional_route
 def update_tab_scroll(payload: UpdateTabScrollRequest, view_id: ViewId) -> Dict[str, object]:
     """This view's scroll in a tab is now this, as it scrolled there."""
-    scroll = {"scrollY": payload["scrollY"], "anchorRootId": payload["anchorRootId"], "scrollAnchor": payload["scrollAnchor"]}
+    scroll: Dict[str, object] = {"scrollY": payload["scrollY"], "anchorRootId": payload["anchorRootId"], "scrollAnchor": payload["scrollAnchor"]}
     return tab_state_store.set_scroll(
         view_id=view_id, tab_id=payload["tabId"], scroll=scroll, read_at_version=payload["version"],
     )
