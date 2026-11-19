@@ -124,7 +124,6 @@ class TabStateUnderSeveralViews(RuleBasedStateMachine):
         # What each view's page holds: the last answer it took.
         self.known: Dict[str, Dict[str, object]] = {}
         # The tabs each view made as reference pages.
-        self.pages: Dict[str, Set[str]] = {view: set() for view in VIEWS}
         # The version at which each tab last came to show other notes (a sort order or a filter).
         self.shows_other_notes_since: Dict[str, int] = {}
         self.version = 0
@@ -273,8 +272,7 @@ class TabStateUnderSeveralViews(RuleBasedStateMachine):
         if is_fresh:
             assert answer is not None and answer["newTabId"] in answer["tabs"], "a new tab is made beside a tab that is there"
         if answer is not None and answer["changed"]:
-            if is_page:
-                self.pages[view].add(answer["newTabId"])
+            assert (answer["newTabId"] in answer["pageTabIds"]) == is_page, "a tab made as a page is the view's page"
 
     @rule(view=views, index=indexes)
     def delete_tab(self, view: str, index: int) -> None:
@@ -396,17 +394,23 @@ class TabStateUnderSeveralViews(RuleBasedStateMachine):
         scope_tab_id = from_tab_id
         if from_tab_id in known["referenceViews"]:
             scope_tab_id = known["referenceViews"][from_tab_id]["originScope"]["scopeTabId"]
-        if scope_tab_id in self.pages[view] or scope_tab_id not in known["tabs"]:
+        if scope_tab_id not in known["tabs"]:
             return
-        # A page is never its own search context, nor opened from a page opened from it. The
-        # server takes both (found 2026-11-18, see the plan's findings); the page sends neither.
+        # Every page leads back to a search (agreed 2026-11-18): refused when its search context
+        # is a page, or when going back from the tab it is opened from comes round to it. The
+        # page sends neither; this view, knowing old tabs, sometimes does.
+        held = readings[view]
+        gone_back_through: List[str] = []
         opened_from = from_tab_id
-        while opened_from in known["referenceViews"] and opened_from != tab_id:
-            opened_from = known["referenceViews"][opened_from]["fromTabId"]
-        if tab_id in (scope_tab_id, opened_from):
-            return
+        while opened_from not in gone_back_through:
+            gone_back_through.append(opened_from)
+            if opened_from not in held["referenceViews"]:
+                break
+            opened_from = held["referenceViews"][opened_from]["fromTabId"]
         # A search context never becomes a page, whatever its search (agreed 2026-11-18).
-        is_context = tab_id in self._contexts(readings)
+        is_refused = any((
+            tab_id in self._contexts(readings), scope_tab_id in held["pageTabIds"], tab_id in gone_back_through,
+        ))
         origin = known["tabs"][scope_tab_id]
         scope = {
             "scopeTabId": scope_tab_id, "searchQuery": origin["searchQuery"], "sortMode": origin["sortMode"],
@@ -424,9 +428,9 @@ class TabStateUnderSeveralViews(RuleBasedStateMachine):
             allowed,
             (tab_id, from_tab_id, scope_tab_id),
         )
-        if is_context:
+        if is_refused:
             # Refused, or "no change" when it names a tab deleted a moment ago.
-            assert answer is None or answer["changed"] is False, "a search context was taken as a reference page"
+            assert answer is None or answer["changed"] is False, "a reference page that leads back to no search was taken"
         if answer is not None and answer["changed"]:
             assert answer["referenceViews"][tab_id]["referenceQuery"] == answer["tabs"][tab_id]["searchQuery"] == note
 
@@ -526,6 +530,11 @@ class TabStateUnderSeveralViews(RuleBasedStateMachine):
             for tab_id, page in reading["referenceViews"].items():
                 assert tab_id not in contexts, "a reference page is its view's own"
                 assert page["fromTabId"] in order, "a reference page is opened from a tab its view sees"
+                back, passed = page["fromTabId"], [tab_id]
+                while back in reading["referenceViews"]:
+                    assert back not in passed, f"going back from {tab_id} comes round to {back}"
+                    passed.append(back)
+                    back = reading["referenceViews"][back]["fromTabId"]
                 assert page["originScope"]["scopeTabId"] in contexts, "a reference page's search context exists"
                 assert page["referenceQuery"] == reading["tabs"][tab_id]["searchQuery"], "a page shows its reference"
             for tab_id in contexts:

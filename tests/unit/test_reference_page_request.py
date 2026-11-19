@@ -502,3 +502,109 @@ def test_each_view_is_told_its_own_pages_only() -> None:
 
     assert store.snapshot(view_id=MAC)["pageTabIds"] == [mac_page]
     assert store.snapshot(view_id=PHONE)["pageTabIds"] == [phone_page]
+
+
+# Every reference page leads back to a search (finding 3 of the simulation, cases agreed
+# 2026-11-18): its search context is never a page, and "opened from" never goes round. Search
+# context groceries, with the Mac's Lasagne page and Tomato page.
+def _set_page(store: TabStateStore, *, page: str, from_tab: str, context: str, note: str) -> dict:
+    return store.set_reference_page(
+        view_id=MAC, tab_id=page, from_tab_id=from_tab, reference_query=note, view_kind="source",
+        origin_scope=_scope(context),
+    )
+
+
+def _lasagne_then_tomato(store: TabStateStore) -> tuple[str, str, str]:
+    groceries, _travel = _two_contexts(store)
+    lasagne = _open_page(store, MAC, from_tab=groceries, context=groceries, note=RECIPE)
+    tomato = _open_page(store, MAC, from_tab=lasagne, context=groceries, note=SHOPPING_LIST)
+    return groceries, lasagne, tomato
+
+
+# Cases 1 and 2: a page that belongs to itself, or to another page.
+@pytest.mark.parametrize("belongs_to_itself", [True, False], ids=["itself", "another page"])
+def test_a_page_whose_search_context_is_a_page_is_refused(belongs_to_itself: bool) -> None:
+    store = TabStateStore()
+    groceries, lasagne, tomato = _lasagne_then_tomato(store)
+    before = store.snapshot(view_id=MAC)
+    context = tomato
+    if belongs_to_itself:
+        context = lasagne
+
+    with pytest.raises(InputRejected):
+        _set_page(store, page=lasagne, from_tab=groceries, context=context, note=RECIPE)
+
+    assert store.snapshot(view_id=MAC) == before
+
+
+# Case 3: two pages each opened from the other.
+def test_a_page_opened_from_a_page_opened_from_it_is_refused() -> None:
+    store = TabStateStore()
+    groceries, lasagne, tomato = _lasagne_then_tomato(store)
+    before = store.snapshot(view_id=MAC)
+
+    with pytest.raises(InputRejected):
+        _set_page(store, page=lasagne, from_tab=tomato, context=groceries, note=RECIPE)
+
+    assert store.snapshot(view_id=MAC) == before
+
+
+# Case 4: the same loop through three pages.
+def test_a_loop_through_three_pages_is_refused() -> None:
+    store = TabStateStore()
+    groceries, lasagne, tomato = _lasagne_then_tomato(store)
+    menu = _open_page(store, MAC, from_tab=tomato, context=groceries, note=MENU)
+    before = store.snapshot(view_id=MAC)
+
+    with pytest.raises(InputRejected):
+        _set_page(store, page=lasagne, from_tab=menu, context=groceries, note=RECIPE)
+
+    assert store.snapshot(view_id=MAC) == before
+
+
+# Case 6: a page given another tab to be opened from, with no loop.
+def test_a_page_given_another_tab_to_be_opened_from_is_taken() -> None:
+    store = TabStateStore()
+    groceries, lasagne, tomato = _lasagne_then_tomato(store)
+
+    answer = _set_page(store, page=tomato, from_tab=groceries, context=groceries, note=SHOPPING_LIST)
+
+    assert answer["changed"] is True
+    assert answer["referenceViews"][tomato]["fromTabId"] == groceries
+    assert answer["referenceViews"][lasagne]["fromTabId"] == groceries
+
+
+# Case 7: a page opened from a second search context, belonging to it.
+def test_a_page_opened_from_a_second_context_belongs_to_it() -> None:
+    store = TabStateStore()
+    _groceries, travel = _two_contexts(store)
+
+    page = _open_page(store, MAC, from_tab=travel, context=travel, note=RECIPE)
+
+    assert store.snapshot(view_id=MAC)["referenceViews"][page]["originScope"]["scopeTabId"] == travel
+
+
+# Case 8: a loop that names a page closed a moment ago changes nothing, and is no error.
+def test_a_loop_naming_a_page_closed_a_moment_ago_changes_nothing() -> None:
+    store = TabStateStore()
+    groceries, lasagne, tomato = _lasagne_then_tomato(store)
+    store.delete_tab(view_id=MAC, tab_id=tomato)
+
+    answer = _set_page(store, page=lasagne, from_tab=tomato, context=groceries, note=RECIPE)
+
+    assert answer["changed"] is False
+    assert answer["referenceViews"][lasagne]["fromTabId"] == groceries
+
+
+# Case 9: tabs saved with a page that belongs to a page load as they are.
+def test_saved_tabs_holding_a_page_that_belongs_to_a_page_load() -> None:
+    store = TabStateStore()
+    groceries, lasagne, tomato = _lasagne_then_tomato(store)
+    with store._lock:
+        store._views[MAC]["referenceViews"][lasagne]["originScope"]["scopeTabId"] = tomato
+        store._persist_locked(connection=None, encryption_service=None, force_plaintext=False)
+
+    loaded = _restarted().snapshot(view_id=MAC)
+
+    assert loaded["tabOrder"] == [groceries, store.snapshot(view_id=MAC)["tabOrder"][1], lasagne, tomato]
+    assert set(loaded["pageTabIds"]) == {lasagne, tomato}

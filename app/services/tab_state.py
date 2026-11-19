@@ -283,6 +283,21 @@ def _is_note_id_search(search: object) -> bool:
     return _NOTE_ID_SEARCH_RE.match(search) is not None
 
 
+def _tabs_gone_back_through(views: Dict[str, Dict[str, object]], from_tab_id: str) -> List[str]:
+    """The tabs going back from from_tab_id passes, itself first: each page's "opened from", up
+    to the first tab that is no page. Saved pages that already go round are passed once."""
+    passed: List[str] = []
+    tab_id = from_tab_id
+    while tab_id not in passed:
+        passed.append(tab_id)
+        if tab_id not in views:
+            break
+        opened_from = views[tab_id]["fromTabId"]
+        assert isinstance(opened_from, str), "a page's fromTabId is a tab id"
+        tab_id = opened_from
+    return passed
+
+
 def _blank_scroll() -> Dict[str, object]:
     return {"scrollY": 0, "anchorRootId": None, "scrollAnchor": None}
 
@@ -1072,8 +1087,6 @@ class TabStateStore:
         if view_kind not in REFERENCE_VIEW_KINDS:
             raise InputRejected("viewKind is not a known kind of view")
         scope = _normalize_origin_scope(origin_scope, from_storage=False)
-        if from_tab_id == tab_id:
-            raise InputRejected("a reference page is opened from another tab")
         with self._lock:
             self._try_decrypt_locked(token="", require_success=True)
             place = self._place_locked(view_id)
@@ -1091,13 +1104,21 @@ class TabStateStore:
             # Only a tab made as a page is one (create_tab, or one saved before views): a search
             # context never becomes a page, whatever its search, so no view loses it from its list
             # and no page is left opened from a tab its view cannot see (agreed 2026-11-18).
+            if from_tab_id == tab_id:
+                raise InputRejected("a reference page is opened from another tab")
             if tab_id not in self._page_owners:
                 raise InputRejected("tabId must reference a reference page")
+            views = _place_reference_views(place)
+            # Every page leads back to a search (agreed 2026-11-18): its search context is no
+            # page, and going back from tab to tab never comes round to it.
+            if scope["scopeTabId"] in self._page_owners:
+                raise InputRejected("originScope.scopeTabId must reference a search context")
+            if tab_id in _tabs_gone_back_through(views, from_tab_id):
+                raise InputRejected("a reference page is never opened from a page opened from it")
             page = {
                 "fromTabId": from_tab_id, "referenceQuery": reference_query, "viewKind": view_kind,
                 "originScope": scope,
             }
-            views = _place_reference_views(place)
             is_already_this_page = (
                 tab_id in views and views[tab_id] == page
                 and tab_id in self._page_owners and self._tabs[tab_id]["searchQuery"] == reference_query
