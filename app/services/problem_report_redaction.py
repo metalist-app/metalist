@@ -217,10 +217,41 @@ def _tag_body(tag: str) -> str:
     return tag
 
 
-def make_stand_ins(tags: Iterable[str]) -> StandInMap:
+# How often a stand-in is drawn in one shape before the shape gets a character longer, and how
+# many characters longer it may get: with 26 letters to draw from, it never gets there.
+_DRAWS_PER_LENGTH = 20
+_MOST_ADDED_CHARACTERS = 16
+_ADDED_CHARACTER = "x"
+
+
+def _segments_of(tags: Iterable[str]) -> set[str]:
+    """Every folder segment of the tags, casefolded, without their @."""
+    return {segment.casefold() for tag in tags for segment in _tag_body(tag).split(_SEPARATOR) if segment}
+
+
+def _free_stand_in(segment: str, *, first_letter: str, taken: set[str]) -> str:
+    """A stand-in for the segment that is none of `taken` (casefolded): drawn again until it is
+    free, in a shape one character longer each time the shape has none left (every digit a tag
+    leaves no digit for `7`). It failed the report instead (found 2026-11-20): a note tagged `5`
+    stopped one report in ten."""
+    shape_of = segment
+    for _added in range(_MOST_ADDED_CHARACTERS + 1):
+        for _draw in range(_DRAWS_PER_LENGTH):
+            candidate = _random_like(shape_of, first_letter=first_letter)
+            if candidate.casefold() not in taken:
+                return candidate
+        shape_of += _ADDED_CHARACTER
+    raise RuntimeError("no free stand-in for a tag in any shape tried")
+
+
+def make_stand_ins(tags: Iterable[str], *, real_tags: frozenset[str]) -> StandInMap:
     """Fresh for every report. Each folder segment is replaced on its own, so `home/` and
-    `home/garden/` share their first stand-in segment; MetaList's own tags stay."""
-    real = sorted(frozenset(tags) - SPEC.meta_tags, key=str.casefold)
+    `home/garden/` share their first stand-in segment; MetaList's own tags stay. real_tags is
+    every tag in the vault: no stand-in segment is a segment of one of them (so no stand-in is a
+    real tag, which the final check refuses), of MetaList's own tags, or of a sibling's stand-in."""
+    report_tags = frozenset(tags)
+    real = sorted(report_tags - SPEC.meta_tags, key=str.casefold)
+    never = _segments_of(real_tags) | _segments_of(report_tags) | _segments_of(SPEC.meta_tags)
     segment_stand_ins: dict[tuple[str, ...], str] = {}
     siblings: dict[tuple[str, ...], list[str]] = {}
     for tag in real:
@@ -235,11 +266,13 @@ def make_stand_ins(tags: Iterable[str]) -> StandInMap:
     for parent, group in siblings.items():
         ordered = sorted(group, key=str.casefold)
         letters = _ordered_first_letters(len(ordered))
+        taken = set(never)
         for segment, letter in zip(ordered, letters, strict=True):
             # A folder tag's trailing slash leaves an empty last segment: it stays empty.
             stand_in = segment
             if segment:
-                stand_in = _random_like(segment, first_letter=letter)
+                stand_in = _free_stand_in(segment, first_letter=letter, taken=taken)
+                taken.add(stand_in.casefold())
             segment_stand_ins[(*parent, segment)] = stand_in
     by_tag: dict[str, str] = {tag: tag for tag in frozenset(tags) & SPEC.meta_tags}
     for tag in real:
@@ -248,11 +281,9 @@ def make_stand_ins(tags: Iterable[str]) -> StandInMap:
         stand_in = _SEPARATOR.join(replaced)
         if tag.startswith(_META_PREFIX):
             stand_in = _META_PREFIX + stand_in
-        if stand_in in SPEC.meta_tags or stand_in == tag:
-            raise RuntimeError("a tag's stand-in came out as a real tag; draw again")
+        assert stand_in not in SPEC.meta_tags and stand_in != tag, "a stand-in is drawn free of every tag"
         by_tag[tag] = stand_in
-    if len(set(by_tag.values())) != len(by_tag):
-        raise RuntimeError("two tags drew the same stand-in")
+    assert len(set(by_tag.values())) == len(by_tag), "sibling stand-ins are drawn apart"
     return StandInMap(by_tag=by_tag)
 
 

@@ -108,7 +108,7 @@ def build_report(
     how busy the computer and MetaList were as the report was made."""
     notes = [note for note in (read_note(note_id) for note_id in draft.note_ids) if note is not None]
     report_tags = {tag for note in notes for tag in note.tags} | _search_tags(draft.search, real_tags=real_tags)
-    stand_ins = make_stand_ins(report_tags)
+    stand_ins = make_stand_ins(report_tags, real_tags=real_tags)
     answered = request_history.REQUEST_HISTORY.answered_by_id(
         (request.request_id for request in draft.requests if request.request_id != ""), now=now,
     )

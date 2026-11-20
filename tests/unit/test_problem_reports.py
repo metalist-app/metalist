@@ -3,10 +3,11 @@ redaction shapes them, tags become fresh stand-ins, and the final check refuses 
 Marker words stand for the user's text: none may reach a report, and the check must pass."""
 
 import json
+import random
 
 import pytest
 
-from app.services import problem_report_store, request_history
+from app.services import problem_report_redaction, problem_report_store, request_history
 from app.services.problem_report_builder import Draft, DraftInput, DraftNote, build_report
 from app.services.problem_report_check import ReportRefused, check_report
 
@@ -56,6 +57,31 @@ def _build(search: str) -> dict:
 def _leaks(report: dict) -> list[str]:
     text = json.dumps(report).casefold()
     return [marker for marker in MARKERS if marker.casefold() in text]
+
+
+class _RepeatableDraws:
+    """In place of `secrets` in the redaction: the same draws in every run. With real draws a
+    stand-in now and then spells a marker by chance (the tag `2026` drawn as `1450`, one build in
+    ten thousand: a full run failed on it, 2026-11-19), which is no word of the user's reaching
+    the report. That the draws themselves are always sound is tested with real ones
+    (tests/unit/test_problem_report_stand_ins.py)."""
+
+    def __init__(self) -> None:
+        self._random = random.Random(_DRAWS_SEED)
+
+    def choice(self, options):
+        return self._random.choice(options)
+
+    def SystemRandom(self) -> random.Random:
+        return self._random
+
+
+_DRAWS_SEED = 20261120
+
+
+@pytest.fixture(autouse=True)
+def _repeatable_stand_ins(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(problem_report_redaction, "secrets", _RepeatableDraws())
 
 
 @pytest.fixture(autouse=True)
