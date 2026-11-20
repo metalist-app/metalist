@@ -7,10 +7,18 @@ import { scrollWindowToYFastAnimated } from './animated-scroll-service.js';
 // the vault's preferences, like any deliberate choice (docs/future-plans/gallery.md).
 const OUTLINE_PREFERENCE = 'pref.gallery_outline_notes';
 const OUTLINE_CLASS = 'is-gallery-outline';
-const GALLERY_NOTES = '#notes-container .note[data-note-tags*="@gallery"]';
-const SWITCH_SELECTOR = ':scope > .note-content .meta-gallery-switch';
+// A gallery is drawn by a note in the list, or by a note inside an embed, which shows its source
+// as the list does (embedded_references.py, note-embed-gallery): the same grid, switch and choice.
+const EMBEDDED_GALLERY_CLASS = 'note-embed-gallery';
+const GALLERY_ELEMENT_SELECTOR = `.${EMBEDDED_GALLERY_CLASS}[data-embed-note-id], .note[data-note-id]`;
+const GALLERY_NOTES = `#notes-container .note[data-note-tags*="@gallery"], #notes-container .${EMBEDDED_GALLERY_CLASS}[data-embed-note-id]`;
+const SWITCH_CLASS_SELECTOR = '.meta-gallery-switch';
+const LISTED_ARROW_SELECTOR = ':scope > .note-collapse-toggle';
+const EMBEDDED_ARROW_SELECTOR = ':scope > .note-embed-body > .note-embed-collapse-toggle';
+// A note that is only an embed holds it: the note's own arrow folds the source, and the embed's
+// first note shows none (docs/ui/references.md).
+const HELD_EMBED_ROOT_SELECTOR = '.note-embed-held .note-embed-root';
 const SWITCH_LABELS = { grid: 'Show as outline', outline: 'Show as grid' };
-const FOLD_ARROW_SELECTOR = ':scope > .note-collapse-toggle';
 const PLACE_DECIMALS = 2;
 
 const moduleState = ApplicationState.createFields('gallery-view', {
@@ -18,6 +26,54 @@ const moduleState = ApplicationState.createFields('gallery-view', {
     observer: null,
     isMarkScheduled: false,
 });
+
+function isEmbedded(gallery) {
+    return gallery.classList.contains(EMBEDDED_GALLERY_CLASS);
+}
+
+function isShown(element) {
+    return element !== null && element.getClientRects().length > 0;
+}
+
+// The arrow that folds this gallery: the note's, the embedded note's, or, for the first note of
+// an embed its note holds, that note's.
+function foldArrowOf(gallery) {
+    if (!isEmbedded(gallery)) {
+        return gallery.querySelector(LISTED_ARROW_SELECTOR);
+    }
+    const arrow = gallery.querySelector(EMBEDDED_ARROW_SELECTOR);
+    if (isShown(arrow) || !gallery.matches(HELD_EMBED_ROOT_SELECTOR)) {
+        return arrow;
+    }
+    return gallery.closest('.note[data-note-id]').querySelector(LISTED_ARROW_SELECTOR);
+}
+
+// The gallery's own switch: a note's text can hold an embedded gallery, whose switch is not the
+// note's.
+function switchOf(gallery) {
+    const own = Array.from(gallery.querySelectorAll(SWITCH_CLASS_SELECTOR)).find((toggle) => galleryElementOf(toggle) === gallery);
+    return own === undefined ? null : own;
+}
+
+// The gallery an element (a tile, the switch) is in: the embedded note or the listed note
+// drawing it, whichever is nearer. null outside any.
+export function galleryElementOf(element) {
+    return element.closest(GALLERY_ELEMENT_SELECTOR);
+}
+
+// The id of the note whose gallery this is: an embed's source, not the note holding the embed.
+export function galleryNoteIdOf(gallery) {
+    const noteId = isEmbedded(gallery) ? gallery.dataset.embedNoteId : gallery.dataset.noteId;
+    if (typeof noteId !== 'string' || noteId === '') {
+        throw new Error('A gallery must name its note');
+    }
+    return noteId;
+}
+
+// Whether the list shows this note as a note of its own (not only inside an embed).
+export function isGalleryNoteListed(noteId) {
+    return document.querySelector(`#notes-container .note[data-note-id="${noteId}"]`) !== null;
+}
 
 function setPlace(toggle, property, value) {
     if (toggle.style[property] !== value) {
@@ -30,9 +86,9 @@ function setPlace(toggle, property, value) {
 // fixed height sat on top of it or off to one side (the maintainer, 2026-11-18). With no arrow
 // shown it keeps the stylesheet's place.
 function placeUnderFoldArrow(note, toggle) {
-    const arrow = note.querySelector(FOLD_ARROW_SELECTOR);
+    const arrow = foldArrowOf(note);
     const parent = toggle.offsetParent;
-    if (arrow === null || arrow.getClientRects().length === 0 || parent === null) {
+    if (!isShown(arrow) || parent === null) {
         setPlace(toggle, 'left', '');
         setPlace(toggle, 'top', '');
         return;
@@ -47,7 +103,7 @@ function setOutlineClass(note, isOutline) {
     if (note.classList.contains(OUTLINE_CLASS) !== isOutline) {
         note.classList.toggle(OUTLINE_CLASS, isOutline);
     }
-    const toggle = note.querySelector(SWITCH_SELECTOR);
+    const toggle = switchOf(note);
     if (toggle === null) {
         return;
     }
@@ -62,7 +118,7 @@ function setOutlineClass(note, isOutline) {
 function markGalleryNotes() {
     const outline = new Set(moduleState.outlineNoteIds);
     for (const note of document.querySelectorAll(GALLERY_NOTES)) {
-        setOutlineClass(note, outline.has(note.dataset.noteId));
+        setOutlineClass(note, outline.has(galleryNoteIdOf(note)));
     }
 }
 

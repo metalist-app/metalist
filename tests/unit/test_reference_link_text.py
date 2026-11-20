@@ -128,7 +128,7 @@ def test_9_a_first_line_holding_link_text_reads_with_it() -> None:
 def test_10_a_folded_note_shows_its_link_text() -> None:
     rendered = render_collapsed_note_content_with_embeds(
         note_id=HOST_ID, content_html=f"<div>Plan: [[{KYOTO_ID}|the plan]]</div><div>later</div>",
-        tags="", context=_context(kyoto_first_line="Kyoto trip"), static_export=False, credentials=CredentialDisplay.DOTS,
+        tags="", context=_context(kyoto_first_line="Kyoto trip"), static_export=False, credentials=CredentialDisplay.DOTS, is_embedded=False,
     )
     assert _visible_text(rendered) == "Plan: the plan"
 

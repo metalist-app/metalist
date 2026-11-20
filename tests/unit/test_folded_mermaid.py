@@ -19,7 +19,7 @@ def _folded(lines: list[str], tags: str) -> str:
     )
     return render_collapsed_note_content_with_embeds(
         note_id=NOTE_ID, content_html="".join(f"<div>{line}</div>" for line in lines), tags=tags,
-        context=context, static_export=False, credentials=CredentialDisplay.DOTS,
+        context=context, static_export=False, credentials=CredentialDisplay.DOTS, is_embedded=False,
     )
 
 

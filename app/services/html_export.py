@@ -747,6 +747,7 @@ def _render_exported_note_node(
             context=embed_render_context,
             static_export=True,
             credentials=credentials,
+            is_embedded=False,
         )))
         # It starts as MetaList shows it: a note that is only a reference folds as its source.
         shown_state_id = resolve_held_source(

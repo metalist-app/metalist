@@ -59,7 +59,7 @@ def _items(tree: _Tree, note_id: str, tags: str) -> list[tuple[str, str, str]]:
     items = collect_gallery_items(
         note_id=note_id, kinds=kinds, context=tree,
         file_ids_in=lambda content_html: [(token.start, token.note_id) for token in collect_active_reference_tokens(content_html)],
-        first_line_of=extract_collapsed_preview_source_html,
+        first_line_of=extract_collapsed_preview_source_html, is_shown=tree.is_shown_in_gallery,
     )
     return [(item.file_id, item.note_id, item.caption) for item in items]
 
@@ -129,7 +129,7 @@ def _pictures(tree: _Tree, note_id: str, tags: str) -> list[tuple[str, str]]:
     items = collect_gallery_items(
         note_id=note_id, kinds=kinds, context=tree,
         file_ids_in=lambda content_html: [(token.start, token.note_id) for token in collect_active_reference_tokens(content_html)],
-        first_line_of=extract_collapsed_preview_source_html,
+        first_line_of=extract_collapsed_preview_source_html, is_shown=tree.is_shown_in_gallery,
     )
     return [(item.file_id or item.image_source, item.note_id) for item in items]
 

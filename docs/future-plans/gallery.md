@@ -29,6 +29,7 @@ Decided 2026-11-10:
 - **Stored in the vault,** encrypted, in backups: drawn once in the background, then always instant. `file_previews` does not fit (its `variant` allows only `light` and `dark`, and its rows come in pairs of SVGs), so the first page gets a table of its own in the files database, a schema step with its version bump, migration and encryption audit (AGENTS.md).
 - **Full screen** shows a PDF's first page like any picture, with ‹ › stepping on through the gallery, and an **Open** button opens the whole PDF in the file viewer.
 - **Plain `@gallery` shows PDFs** with the images and drawings, as a badge and name until their first page is drawn (a click on that opens the PDF); the page arrives without a reload, through the status check that brings link titles (`first_page_revision`).
+- **A gallery inside an embed** (built 2026-11-19) shows its grid, switch and folded row as in the list, and every picture whatever the search: `docs/ui/references.md`, Embeds.
 - **Still open:** whether a PDF embedded in a note's own text (`![[...]]`, outside a gallery) shows its first page instead of its card. Only gallery tiles do so far.
 
 Acceptance checks:

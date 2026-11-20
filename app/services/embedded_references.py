@@ -33,7 +33,7 @@ from app.services.email_cards import email_card_name
 from app.services.email_files import email_badge, is_email_file
 from app.services.inline_image_occurrences import annotate_inline_image_occurrences
 from app.services.subtree_stats import render_subtree_stats_footer
-from app.services.note_gallery import collect_gallery_items, gallery_kinds, render_gallery
+from app.services.note_gallery import every_note_shown, collect_gallery_items, gallery_kinds, render_gallery
 from app.services.search_links import SearchLink, parse_search_link, render_search_link
 from app.services.search_embeds import search_runner
 from app.services.input_errors import InputRejected
@@ -50,6 +50,10 @@ _HTML_TOKEN_SPLIT_RE = re.compile(r"(<[^>]+>)")
 _EMBED_ARROW_STATES = {True: ("false", "Expand note"), False: ("true", "Collapse note")}
 # An embedded note's classes, by whether it is the embed's root.
 _EMBED_NODE_CLASSES = {True: "note-embed-node note-embed-root", False: "note-embed-node"}
+# An embedded note showing a gallery (@gallery with pictures under it).
+_EMBED_GALLERY_CLASS = "note-embed-gallery"
+# The first line of a folded gallery inside an embed, above its row of pictures.
+_EMBED_GALLERY_FIRST_LINE_CLASS = "note-embed-gallery-first-line"
 # Editors write "first line<div>second line</div>", so a block's opening tag also ends a line.
 _FIRST_LINE_BOUNDARY_RE = re.compile(
     r"(?i)<br\s*/?>|</?(?:div|p|li|h[1-6]|pre|blockquote|ul|ol|table|tr|td|th|section|article|header|footer)\b[^>]*>\s*|\n"
@@ -366,7 +370,7 @@ def render_note_content_with_embeds(
     return (
         rendered_content
         + render_subtree_stats_footer(note_id=note_id, tags=tags, context=context)
-        + _render_note_gallery(note_id=note_id, tags=tags, context=context, static_export=static_export)
+        + _render_note_gallery(note_id=note_id, tags=tags, context=context, static_export=static_export, is_embedded=False)
     )
 
 
@@ -458,12 +462,18 @@ def _render_document_tile(*, record: object, file_id: str, context: EmbedRenderC
     return f'<span class="meta-gallery-document" aria-hidden="true">{_BUTTON_TAG_RE.sub(_AS_SPAN, drawn)}</span>'
 
 
-def _render_note_gallery(*, note_id: str, tags: str, context: EmbedRenderContext, static_export: bool) -> str:
+def _render_note_gallery(*, note_id: str, tags: str, context: EmbedRenderContext, static_export: bool, is_embedded: bool) -> str:
     kinds = gallery_kinds(tags)
     if kinds is None:
         return ""
+    # In the list a search narrows the gallery to the notes it shows; an embed shows its source
+    # whole whatever the search, so its gallery holds every picture, as its outline holds every
+    # child (the maintainer, 2026-11-19: an embedded gallery showed an outline, never its grid).
+    is_shown = context.is_shown_in_gallery
+    if is_embedded:
+        is_shown = every_note_shown
     items = collect_gallery_items(
-        note_id=note_id, kinds=kinds, context=context,
+        note_id=note_id, kinds=kinds, context=context, is_shown=is_shown,
         file_ids_in=lambda content_html: [(token.start, token.note_id) for token in collect_active_reference_tokens(content_html)],
         first_line_of=extract_collapsed_preview_source_html,
     )
@@ -573,6 +583,7 @@ def render_collapsed_note_content_with_embeds(
     context: EmbedRenderContext,
     static_export: bool,
     credentials: CredentialDisplay,
+    is_embedded: bool,
 ) -> str:
     preview_source_html = _first_shown_line(extract_collapsed_preview_source_html(content_html), context=context)
     if has_scoped_footnotes(tags) or _has_markdown_footnotes(content_html=content_html, tags=tags):
@@ -593,7 +604,14 @@ def render_collapsed_note_content_with_embeds(
         is_held=sole_embed_token(content_html) is not None,
     )
     # A folded gallery shows one row of its pictures under its first line (main.css).
-    return rendered_first_line + _render_note_gallery(note_id=note_id, tags=tags, context=context, static_export=static_export)
+    gallery_html = _render_note_gallery(
+        note_id=note_id, tags=tags, context=context, static_export=static_export, is_embedded=is_embedded,
+    )
+    if is_embedded and gallery_html != "":
+        # A folded note in an embed is cut to one line by its box (main.css); with a row of
+        # pictures under it, the line alone is cut.
+        return f'<div class="{_EMBED_GALLERY_FIRST_LINE_CLASS}">{rendered_first_line}</div>{gallery_html}'
+    return rendered_first_line + gallery_html
 
 
 def _shown_note_embeds(preview_source_html: str, context: EmbedRenderContext) -> List[ReferenceToken]:
@@ -960,7 +978,7 @@ def _render_search_embed(
             record = context.get_note(note_id)
             first_line = render_collapsed_note_content_with_embeds(
                 note_id=note_id, content_html=getattr(record, "content"), tags=getattr(record, "tags"),
-                context=context, static_export=False, credentials=credentials,
+                context=context, static_export=False, credentials=credentials, is_embedded=False,
             )
             rows.append(
                 f'<div class="note-search-embed-result" data-result-note-id="{html.escape(note_id, quote=True)}">'
@@ -1770,6 +1788,11 @@ def _render_embedded_note_node(
     if shows_note_embed(content_html=record_content, context=context):
         # A note in the embed that is itself only a reference: a deeper embed.
         classes = f"{classes} note-embed-holds-embed"
+    # Its gallery, as the list draws it: under its text, its children hidden while the grid
+    # shows (main.css, gallery-view-service.js); folded, one row under its first line.
+    gallery_html = _render_note_gallery(note_id=note_id, tags=record_tags, context=context, static_export=static_export, is_embedded=True)
+    if gallery_html != "":
+        classes = f"{classes} {_EMBED_GALLERY_CLASS}"
     child_ids = context.get_children(note_id)
     assert static_export or not context.static_collapse_arrows, "only a static export folds in the file"
     # Collapse is shared: an embedded note shows the state saved for it, as in
@@ -1809,6 +1832,7 @@ def _render_embedded_note_node(
             context=context,
             static_export=static_export,
             credentials=credentials,
+            is_embedded=True,
         )
     else:
         rendered_content = _render_expanded_embedded_content(
@@ -1819,7 +1843,7 @@ def _render_embedded_note_node(
             ancestry=ancestry,
             static_export=static_export,
             credentials=credentials,
-        )
+        ) + gallery_html
         # Its children are shown under it: its sites are shown above them.
         with showing_sites_above(sites_shown_above() | sites_linked_in(record_content)):
             children_html = _render_embedded_children(
@@ -1870,6 +1894,7 @@ def _render_foldable_static_embedded_note_node(
         context=context,
         static_export=True,
         credentials=credentials,
+        is_embedded=True,
     )
     expanded_content = _render_expanded_embedded_content(
         note_id=note_id,
@@ -1879,7 +1904,7 @@ def _render_foldable_static_embedded_note_node(
         ancestry=ancestry,
         static_export=True,
         credentials=credentials,
-    )
+    ) + _render_note_gallery(note_id=note_id, tags=record_tags, context=context, static_export=True, is_embedded=True)
     with showing_sites_above(sites_shown_above() | sites_linked_in(annotated_content)):
         children_html = _render_embedded_children(
             child_ids=child_ids,
