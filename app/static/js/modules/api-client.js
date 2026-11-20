@@ -1160,7 +1160,8 @@ export const NotesAPI = {
         });
     },
 
-    async fetchTagSuggestions(noteId, anchors, explicitTags, prefix, contentHtml, signal) {
+    // search: the search of the list the note is edited in (a tag it excludes is not offered unasked).
+    async fetchTagSuggestions(noteId, anchors, explicitTags, prefix, contentHtml, search, signal) {
         if (typeof noteId !== 'string' || noteId.length === 0) {
             throw new Error('NotesAPI.fetchTagSuggestions requires noteId string');
         }
@@ -1176,6 +1177,9 @@ export const NotesAPI = {
         if (typeof contentHtml !== 'string') {
             throw new Error('NotesAPI.fetchTagSuggestions requires contentHtml string');
         }
+        if (typeof search !== 'string') {
+            throw new Error('NotesAPI.fetchTagSuggestions requires search string');
+        }
         if (typeof signal !== 'undefined' && (signal === null || typeof signal !== 'object')) {
             throw new Error('NotesAPI.fetchTagSuggestions requires signal object when provided');
         }
@@ -1184,7 +1188,8 @@ export const NotesAPI = {
             anchors: anchors,
             explicit_tags: explicitTags,
             prefix: prefix,
-            content_html: contentHtml
+            content_html: contentHtml,
+            search: search
         };
         const options = {
             method: 'POST',

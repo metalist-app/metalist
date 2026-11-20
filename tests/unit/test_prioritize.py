@@ -606,6 +606,7 @@ def test_note_tag_suggestions_route_uses_configured_tag_limit(
             "explicit_tags": ["alpha"],
             "prefix": "f",
             "content_html": "<p>foo</p>",
+            "search": "alpha -beta",
         }
     )
 
@@ -616,6 +617,7 @@ def test_note_tag_suggestions_route_uses_configured_tag_limit(
         "prefix": "f",
         "content_html": "<p>foo</p>",
         "limit": 5,
+        "search": "alpha -beta",
     }
     assert result == {
         "suggestions": ["foo"],

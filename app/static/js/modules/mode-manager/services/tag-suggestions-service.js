@@ -319,6 +319,7 @@ export function updateTagSuggestions(tagBarInput) {
             context.explicitTags,
             context.prefix,
             contentHtml,
+            ModeContext.getExecutedSearchQuery(),
             requestController.signal
         ).catch((error) => {
             rethrowUnexpectedError(error);

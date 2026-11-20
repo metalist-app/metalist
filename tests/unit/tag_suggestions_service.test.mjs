@@ -387,7 +387,8 @@ test('starting a new tag suggestion request aborts the previous in-flight reques
     });
 
     const requests = [];
-    NotesAPI.fetchTagSuggestions = async (_noteId, _anchors, _explicitTags, _prefix, _contentHtml, signal) => {
+    NotesAPI.fetchTagSuggestions = async (_noteId, _anchors, _explicitTags, _prefix, _contentHtml, search, signal) => {
+        assert.equal(typeof search, 'string', 'the list\'s search goes with the request');
         assert.equal(typeof signal, 'object');
         assert.equal(typeof signal.aborted, 'boolean');
         return new Promise((resolve, reject) => {

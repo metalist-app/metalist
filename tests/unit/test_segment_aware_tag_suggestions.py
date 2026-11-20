@@ -1683,7 +1683,8 @@ def test_tag_suggestions_include_literal_content_hits_even_without_anchor_cooccu
     )
 
     assert suggestions[0] == "LucidCharts"
-    assert suggestions[1:] == ["project", "projects", "veggie-peeler"]
+    # `projects` is `project` again: one of a singular and its plural is offered (2026-11-19).
+    assert suggestions[1:] == ["project", "veggie-peeler"]
 
 
 def test_tag_suggestions_include_acronym_content_hits_even_without_anchor_cooccurrence(

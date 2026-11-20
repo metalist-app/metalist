@@ -431,7 +431,7 @@ def test_the_tag_bar_never_suggests_a_tag_whose_last_note_was_deleted(live_datab
 
     suggestions = suggest_tags_with_reasons_for_note(
         note_id="trip", anchors=[], explicit_tags=[], prefix="", content_html="<div>Temples</div>",
-        limit=20,
+        limit=20, search="",
     )
 
     assert [suggestion.tag for suggestion in suggestions] == ["kyoto"]

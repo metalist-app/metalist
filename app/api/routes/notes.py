@@ -1085,6 +1085,7 @@ def tag_suggestions(payload: TagSuggestionsRequest) -> Dict[str, object]:
         prefix=prefix,
         content_html=content_html,
         limit=MAX_TAG_SUGGESTIONS,
+        search=payload["search"],
     )
     # Why each is suggested, shown when it is right-clicked (docs/ui/tag-bar.md).
     return {

@@ -22,7 +22,7 @@ from app.security.sensitive_cache import SensitiveMemo
 from app.services.resource_limits import SENSITIVE_MEMO_BYTES
 from app.services.search_index import own_value_token, search_index, tag_family_of
 from app.services.tag_properties import tag_part_of_token
-from app.services.tag_plural_variants import PluralSpellings
+from app.services.tag_plural_variants import PluralSpellings, plural_spellings
 from app.services.tag_suggestion_reasons import ContextOverlap
 from app.services.tag_suggestion_reasons import ReasonWriter
 from app.services.tag_suggestion_reasons import SuggestionEvidence
@@ -42,6 +42,7 @@ from app.services.tag_term_matching import tag_term_matches_prefix
 from app.services.tag_term_matching import with_link_titles
 from app.services.tag_words_in_note import tags_from_words
 from app.services.link_titles import link_title_store
+from app.services.search_query import tags_excluded_by_search
 from app.services.search_text import link_titles_in_html
 
 _UNMATCHED_SEGMENT_PENALTY = 10
@@ -743,7 +744,9 @@ def _content_match_sort_key(
         structured_term_penalty = 0
     elif any(char.isdigit() for char in term):
         structured_term_penalty = 0
-    elif any(char in TAG_SUGGESTION_CONNECTORS for char in term):
+    elif any(char in TAG_SUGGESTION_CONNECTORS for char in term.strip(TAG_SUGGESTION_CONNECTORS)):
+        # Connectors that join words (`empty-note`), not ones around a single word: `__file__`
+        # is no more specific than `bug` (the maintainer, 2026-11-19).
         structured_term_penalty = 0
     return (
         -(1 if match.raw_phrase_match else 0),
@@ -991,7 +994,7 @@ def suggest_tags_for_note(
     the rules are left out until typed (docs/ui/tag-bar.md, "Tag Suggestions")."""
     return _rank_tag_suggestions(
         note_id=note_id, anchors=anchors, explicit_tags=explicit_tags, prefix=prefix,
-        content_html=content_html, limit=limit,
+        content_html=content_html, limit=limit, excluded_by_search=_NO_SEARCH,
     ).tags
 
 
@@ -1003,13 +1006,15 @@ def suggest_tags_with_reasons_for_note(
     prefix: str,
     content_html: str,
     limit: int,
+    search: str,
 ) -> List[TagSuggestion]:
     """What the tag bar shows: the same suggestions, a tag used with values preceded by
-    last time's values, each with why it is suggested (shown on right-click)."""
+    last time's values, each with why it is suggested (shown on right-click). `search` is the
+    search of the list the note is edited in: with nothing typed, a tag it excludes is not offered."""
     explicit_list = list(explicit_tags)
     ranked = _rank_tag_suggestions(
         note_id=note_id, anchors=anchors, explicit_tags=explicit_list, prefix=prefix,
-        content_html=content_html, limit=limit,
+        content_html=content_html, limit=limit, excluded_by_search=tags_excluded_by_search(search),
     )
     if prefix.startswith("@"):
         return ranked.with_reasons()
@@ -1037,6 +1042,7 @@ def _rank_tag_suggestions(
     prefix: str,
     content_html: str,
     limit: int,
+    excluded_by_search: FrozenSet[str],
 ) -> _RankedSuggestions:
     if not isinstance(prefix, str):
         raise TypeError("prefix must be a string")
@@ -1044,7 +1050,7 @@ def _rank_tag_suggestions(
     anchor_list = list(anchors)
     ranked = _rank_by_what_is_typed(
         note_id=note_id, anchors=anchor_list, explicit_tags=explicit_list, prefix=prefix,
-        content_html=content_html, limit=limit,
+        content_html=content_html, limit=limit, excluded_by_search=excluded_by_search,
     )
     text_datetime = _datetime_named_in_text(
         note_id=note_id, explicit_tags=explicit_list, prefix=prefix, content_html=content_html,
@@ -1135,11 +1141,12 @@ def _rank_by_what_is_typed(
     prefix: str,
     content_html: str,
     limit: int,
+    excluded_by_search: FrozenSet[str],
 ) -> _RankedSuggestions:
     if prefix == "":
         empty_bar = _suggest_tags(
             note_id=note_id, anchors=anchors, explicit_tags=explicit_tags, content_html=content_html,
-            limit=limit, include_unranked=True,
+            limit=limit, include_unranked=True, excluded_by_search=excluded_by_search,
         )
         return _with_datetime_dated(empty_bar, note_id=note_id, content_html=content_html)
     if prefix.startswith("@"):
@@ -1324,6 +1331,10 @@ class _TypingBasis:
 # The empty-bar ranking is kept this deep for typing to narrow (measured in
 # docs/design/tag-suggestion-learnings.md; deeper evidence is rarely matched).
 _TYPING_EVIDENCE_DEPTH = 500
+# Asked for without a list's search (the AI's vocabulary, the letters typed): nothing is excluded.
+_NO_SEARCH: FrozenSet[str] = frozenset()
+# No kept suggestion is the other spelling (_place_of_other_spelling).
+_NO_PLACE = -1
 # A few notes' tag bars at once (several tabs or windows); tag names are private, so the
 # memo is cleared on lock.
 _TYPING_BASIS_MEMO_ENTRIES = 4
@@ -1344,7 +1355,8 @@ def _typing_basis(
     link_title_revision = link_title_store.get_revision()
     evidence = _suggest_tags(
         note_id=note_id, anchors=anchors, explicit_tags=empty_bar_explicit, content_html=content_html,
-        limit=_TYPING_EVIDENCE_DEPTH, include_unranked=False,
+        # Typed letters offer a tag the search excludes like any other.
+        limit=_TYPING_EVIDENCE_DEPTH, include_unranked=False, excluded_by_search=_NO_SEARCH,
     )
     raw_tag_counts = search_index.list_raw_tag_family_frequencies_by_casefold()
     explicit_terms, exact_tag_counts = _collect_explicit_tag_statistics()
@@ -1560,6 +1572,51 @@ def _with_last_values(
     return _RankedSuggestions(tags=paired[:limit], explain=lambda entry: reasons_by_entry[entry.casefold()])
 
 
+def _one_spelling_of_each(suggestions: List[str], *, exact_tag_counts: Dict[str, int]) -> List[str]:
+    """The suggestions with a singular and its plural (`tag`, `tags`) as one: the more used of the
+    two, where the first of them stood (the maintainer, 2026-11-19: the empty bar offered both).
+    Typing offers every spelling that matches (_suggest_while_typing)."""
+    kept: List[str] = []
+    place_by_key: Dict[str, int] = {}
+    # Each kept tag's place, by each of its plural spellings.
+    place_by_plural: Dict[str, int] = {}
+    left_out: set[str] = set()
+    for term in suggestions:
+        key = term.casefold()
+        if key in left_out:
+            continue
+        if key in place_by_key:
+            # The same tag again (a synonym shown after its representative) keeps its places.
+            kept.append(term)
+            continue
+        place = _place_of_other_spelling(key, place_by_key=place_by_key, place_by_plural=place_by_plural)
+        if place == _NO_PLACE:
+            place = len(kept)
+            kept.append(term)
+        elif _lookup_count(exact_tag_counts, term) > _lookup_count(exact_tag_counts, kept[place]):
+            left_out.add(kept[place].casefold())
+            del place_by_key[kept[place].casefold()]
+            kept[place] = term
+        else:
+            left_out.add(key)
+            continue
+        place_by_key[key] = place
+        for plural in plural_spellings(key):
+            place_by_plural[plural] = place
+    return kept
+
+
+def _place_of_other_spelling(key: str, *, place_by_key: Dict[str, int], place_by_plural: Dict[str, int]) -> int:
+    """Where a kept suggestion that is the singular or plural of `key` stands, or _NO_PLACE."""
+    if not key.startswith("@"):
+        if key in place_by_plural:
+            return place_by_plural[key]
+        for plural in plural_spellings(key):
+            if plural in place_by_key:
+                return place_by_key[plural]
+    return _NO_PLACE
+
+
 def _inherited_or_implied_tags(*, note_id: str, anchors: List[str], explicit_casefold: set[str]) -> set[str]:
     """Non-meta tags that already apply to the note without being written in its bar."""
     anchor_set = {tag for tag in anchors if not tag.startswith("@")}
@@ -1577,6 +1634,7 @@ def _suggest_tags(
     content_html: str,
     limit: int,
     include_unranked: bool,
+    excluded_by_search: FrozenSet[str],
 ) -> _RankedSuggestions:
     """The empty-bar ranking; typing narrows it (_suggest_while_typing)."""
     if not isinstance(note_id, str) or not note_id:
@@ -1616,7 +1674,9 @@ def _suggest_tags(
     normalized_content = _note_text_with_link_titles(content_html)
     candidate_terms: List[str] = []
     for term in all_terms:
-        if term.casefold() in suppressed_casefold:
+        # A tag the list's search excludes would take the note out of the list: not offered
+        # unasked (the maintainer, 2026-11-19); typing its letters offers it (_typing_basis).
+        if term.casefold() in suppressed_casefold or term.casefold() in excluded_by_search:
             continue
         candidate_terms.append(term)
 
@@ -1681,7 +1741,9 @@ def _suggest_tags(
     # Another spelling of a tag the note has (eggs beside egg) says nothing new here;
     # typing offers every spelling that matches (_suggest_while_typing adds them by use).
     applying = PluralSpellings([*explicit_tag_list, *inherited_or_implied_tags])
-    suggestions = [term for term in suggestions if not applying.covers(term)]
+    suggestions = _one_spelling_of_each(
+        [term for term in suggestions if not applying.covers(term)], exact_tag_counts=exact_tag_counts,
+    )
 
     representative_by_term = _build_equivalent_term_representatives(
         terms=list(candidate_terms) + suggestions,

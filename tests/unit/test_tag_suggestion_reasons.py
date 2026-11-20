@@ -41,7 +41,7 @@ def _reasons(*, anchors, prefix, content):
         note_id="current", anchors=list(anchors), explicit_tags=explicit_tags, prefix=prefix,
         content_html=f"<p>{content}</p>", limit=20,
     )
-    with_reasons = tag_suggestions_module.suggest_tags_with_reasons_for_note(**arguments)
+    with_reasons = tag_suggestions_module.suggest_tags_with_reasons_for_note(search="", **arguments)
     # Explaining never changes what is suggested or its order.
     assert [suggestion.tag for suggestion in with_reasons] == tag_suggestions_module.suggest_tags_for_note(**arguments)
     return {suggestion.tag: suggestion.reasons for suggestion in with_reasons}
@@ -162,7 +162,7 @@ def test_tags_that_already_apply_say_how(monkeypatch: pytest.MonkeyPatch) -> Non
         suggestion.tag: suggestion.reasons
         for prefix in ("ma", "tr", "m")
         for suggestion in tag_suggestions_module.suggest_tags_with_reasons_for_note(
-            explicit_tags=[prefix], prefix=prefix, **explicit,
+            explicit_tags=[prefix], prefix=prefix, search="", **explicit,
         )
     }
     assert by_tag["maple"] == (
