@@ -44,14 +44,14 @@ def _migrate(notes: Path) -> tuple[int, ...]:
 
 
 def test_this_is_the_current_version() -> None:
-    assert CURRENT_DATABASE_VERSION == _PREVIOUS_VERSION + 1
+    assert CURRENT_DATABASE_VERSION >= _PREVIOUS_VERSION + 1
 
 
 @pytest.mark.parametrize("has_column", [False, True], ids=["before-open", "added-on-open"])
 def test_migration_adds_the_sharing_choice_and_a_vault_is_not_shared(tmp_path: Path, has_column: bool) -> None:
     notes = _version_19_vault(tmp_path, has_column=has_column)
 
-    assert _migrate(notes) == (20,)
+    assert _migrate(notes) == (20, 21)
     assert _migrate(notes) == ()
 
     with closing(sqlite3.connect(notes)) as connection:

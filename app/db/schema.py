@@ -12,6 +12,8 @@ ONTOLOGY_RULES_TABLE = "ontology_rules"
 TAB_STATE_TABLE = "tab_state"
 # The vault's AI conversation, one row (docs/ui/ai-chat.md, "Saved with the vault").
 AI_CHAT_TABLE = "ai_chat"
+# Where each import's notes came from, a row per import (docs/ready-to-build/import-export-launch.md §5, "Importing again").
+IMPORT_ORIGINS_TABLE = "import_origins"
 LINK_TITLES_TABLE = "link_titles"
 LINK_ICONS_TABLE = "link_icons"
 REMINDERS_TABLE = "reminders"
@@ -149,6 +151,25 @@ CREATE TABLE IF NOT EXISTS {AI_CHAT_TABLE} (
 
 def create_ai_chat_table(connection: Connection) -> None:
     connection.execute(_CREATE_AI_CHAT_TABLE)
+
+
+IMPORT_ORIGINS_COLUMNS: tuple[str, ...] = (
+    "id", "state_json", "state_encryption_nonce", "state_encryption_tag", "created_at",
+)
+
+_CREATE_IMPORT_ORIGINS_TABLE = f"""
+CREATE TABLE IF NOT EXISTS {IMPORT_ORIGINS_TABLE} (
+    id INTEGER PRIMARY KEY,
+    state_json TEXT NOT NULL,
+    state_encryption_nonce BLOB,
+    state_encryption_tag BLOB,
+    created_at TEXT NOT NULL
+);
+"""
+
+
+def create_import_origins_table(connection: Connection) -> None:
+    connection.execute(_CREATE_IMPORT_ORIGINS_TABLE)
 
 
 _CREATE_LINK_TITLES_TABLE = f"""
@@ -295,6 +316,7 @@ def initialize_schema(connection: Connection) -> None:
     connection.execute(_CREATE_ONTOLOGY_RULES_TABLE)
     connection.execute(_CREATE_TAB_STATE_TABLE)
     create_ai_chat_table(connection)
+    create_import_origins_table(connection)
     connection.execute(_CREATE_LINK_TITLES_TABLE)
     create_link_icons_table(connection)
     connection.execute(_CREATE_REMINDERS_TABLE)

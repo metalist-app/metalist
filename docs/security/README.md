@@ -70,6 +70,11 @@ The AI conversation (`ai_chat`, database version 19: one row, the vault's chat a
 `app/services/ai_chat.py`) encrypts its whole payload (`state_json`): messages, summaries, the
 agent's records and the IDs of the notes the AI could see. Its row ID and save timestamps are
 readable structural metadata. Clear Chat deletes the row.
+Where each import's notes came from (`import_origins`, database version 21: a row per import,
+written by `app/services/import_origins.py`) encrypts its whole payload (`state_json`): the
+folder's name, the folder it went into, each file's path, fingerprints of the file and of its
+notes, and the root notes' IDs. Its row ID and the import's time (`created_at`) are readable
+structural metadata. Setting or removing a password rewrites every row.
 Whether a vault is shared on the network (`namespace_launch_profile.shared_on_network`,
 database version 20) is readable structural metadata, beside the vault's ports: a vault's
 server reads it before the vault is unlocked, to choose where it listens.

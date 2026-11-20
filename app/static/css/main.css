@@ -13536,6 +13536,32 @@ suggestions as pills. */
     margin-top: 22px;
 }
 
+.modal-content .wizard-toggle input[type="radio"] {
+    flex: none;
+    width: auto;
+    margin: 0;
+}
+
+/* A folder that came in before (the import's Summary): its choice over the counts, the box
+   for the edited notes under Replace, indented as its part. */
+.wizard-again:not(:empty) {
+    margin-bottom: 18px;
+}
+
+.wizard-again-edited {
+    margin-left: 26px;
+}
+
+.wizard-again .wizard-note + .wizard-toggle {
+    margin-top: 12px;
+}
+
+/* The import's Folder screen: only the files changed since a day, under the folder's name. */
+.wizard-field.wizard-changed-since {
+    max-width: 200px;
+    margin-top: 20px;
+}
+
 /* A step's yes or no at its top; unticked, the fields under it fold away. */
 .wizard-toggle.wizard-toggle-lead {
     margin-bottom: 20px;

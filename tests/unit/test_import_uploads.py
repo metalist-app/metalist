@@ -172,7 +172,7 @@ sent = client.post(API_PREFIX + "/import/uploads/" + started["uploadId"] + "/fil
                    data={"path": "notes/plan.md"}, files={"file": ("plan.md", b"# Plan\\n", "text/markdown")})
 assert sent.status_code == 200, sent.text
 assert not (Path(started["folderPath"]) / "notes" / "plan.md").exists()
-scanned = client.post(API_PREFIX + "/import/scan", headers=headers, json={"folderPath": started["folderPath"]})
+scanned = client.post(API_PREFIX + "/import/scan", headers=headers, json={"folderPath": started["folderPath"], "changedSince": ""})
 assert [group["key"] for group in scanned.json()["groups"]] == ["text"], scanned.json()
 assert client.post(API_PREFIX + "/import/uploads/" + started["uploadId"] + "/discard", headers=headers).status_code == 200
 assert not Path(started["folderPath"]).exists()

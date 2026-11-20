@@ -45,7 +45,7 @@ def _columns(notes: Path) -> set[str]:
 def test_migration_adds_the_conversation_table(tmp_path: Path, has_table: bool) -> None:
     notes = _version_18_vault(tmp_path, has_table=has_table)
 
-    assert _migrate(notes) == (19, 20)
+    assert _migrate(notes) == (19, 20, 21)
     assert _migrate(notes) == ()
 
     assert _columns(notes) == set(AI_CHAT_COLUMNS)

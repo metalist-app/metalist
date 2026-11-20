@@ -14,7 +14,7 @@ from app.db.file_schema import initialize_file_schema as initialize_catalog_sche
 from app.db.legacy_file_schema import initialize_file_schema
 from app.db.move_files_to_blobs import move_files_to_blobs
 from app.db.blob_store import resolve_legacy_file_database_path as resolve_file_database_path
-from app.db.schema import AI_CHAT_TABLE, LINK_ICONS_TABLE, initialize_schema
+from app.db.schema import AI_CHAT_TABLE, IMPORT_ORIGINS_TABLE, LINK_ICONS_TABLE, initialize_schema
 from app.encryption_audit import audit_all_namespaces, main
 from app.services.encryption import EncryptionService
 
@@ -1177,3 +1177,47 @@ def test_a_plaintext_conversation_in_an_encrypted_namespace_is_reported(
     if not is_encrypted:
         assert (AI_CHAT_TABLE, "state_json") in {(finding.table, finding.field) for finding in report.fatal_findings}
         assert "secret question" not in report.render_text()
+
+
+# Version 21 adds import_origins (where each import's notes came from, docs/ready-to-build/import-export-launch.md §5). Before
+# 21 the table may be missing or already added on open; from 21 it is required, its payload encrypted.
+@pytest.mark.parametrize(("version", "has_table", "allowed"), [(20, False, True), (20, True, True), (21, True, True), (21, False, False)])
+def test_version_21_requires_the_import_origins_table(tmp_path: Path, version: int, has_table: bool, allowed: bool) -> None:
+    namespaces_directory = tmp_path / "namespaces"
+    database_path = _create_namespace_database(namespaces_directory, namespace="private", encryption_enabled=True)
+    with sqlite3.connect(database_path) as connection:
+        if not has_table:
+            connection.execute(f"DROP TABLE {IMPORT_ORIGINS_TABLE}")
+        connection.execute(f"PRAGMA user_version = {version}")
+
+    report = audit_all_namespaces(namespaces_directory=namespaces_directory)
+
+    assert report.startup_allowed is allowed, report.render_text()
+    if not allowed:
+        assert {(finding.table, finding.field) for finding in report.fatal_findings} == {(IMPORT_ORIGINS_TABLE, "*")}
+
+
+_ENCRYPTED_IMPORT_RECORD = ("Y2lwaGVydGV4dA==", b"n" * 12, b"t" * 16)
+_PLAINTEXT_IMPORT_RECORD = ('{"folderName": "Secret recipes", "files": [["Bread.md", "f", "r", "w"]]}', None, None)
+
+
+@pytest.mark.parametrize(("saved", "is_encrypted"), [(_ENCRYPTED_IMPORT_RECORD, True), (_PLAINTEXT_IMPORT_RECORD, False)],
+                         ids=["encrypted", "plaintext"])
+def test_a_plaintext_import_record_in_an_encrypted_namespace_is_reported(
+    tmp_path: Path, saved: tuple[str, bytes | None, bytes | None], is_encrypted: bool,
+) -> None:
+    namespaces_directory = tmp_path / "namespaces"
+    database_path = _create_namespace_database(namespaces_directory, namespace="private", encryption_enabled=True)
+    with sqlite3.connect(database_path) as connection:
+        connection.execute(
+            f"INSERT INTO {IMPORT_ORIGINS_TABLE} (state_json, state_encryption_nonce, state_encryption_tag, created_at) "
+            "VALUES (?, ?, ?, 'now')",
+            saved,
+        )
+
+    report = audit_all_namespaces(namespaces_directory=namespaces_directory)
+
+    assert report.startup_allowed is is_encrypted, report.render_text()
+    if not is_encrypted:
+        assert (IMPORT_ORIGINS_TABLE, "state_json") in {(finding.table, finding.field) for finding in report.fatal_findings}
+        assert "Secret recipes" not in report.render_text()

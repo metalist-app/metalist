@@ -15,6 +15,7 @@ from app.db.file_versions_migration import add_text_versions
 from app.db.move_files_to_blobs import move_files_to_blobs
 from app.db.retire_sounds import retire_sounds
 from app.db.schema import AI_CHAT_COLUMNS, AI_CHAT_TABLE, create_ai_chat_table
+from app.db.schema import IMPORT_ORIGINS_COLUMNS, IMPORT_ORIGINS_TABLE, create_import_origins_table
 from app.db.schema import NAMESPACE_LAUNCH_PROFILE_TABLE, SHARED_ON_NETWORK_COLUMN, add_shared_on_network_column
 from app.db.schema import create_namespace_launch_profile_table
 from app.db.schema import LINK_ICONS_COLUMNS, LINK_ICONS_TABLE, create_link_icons_table, create_namespace_content_migrations_table
@@ -521,6 +522,25 @@ def add_network_sharing_column(
     return 0
 
 
+def add_import_origins_table(
+    *,
+    connection: sqlite3.Connection,
+    encryption_enabled: bool,  # noqa: ARG001
+    encryption_service: EncryptionService | None,  # noqa: ARG001
+) -> int:
+    """Version 20→21: where each import's notes came from, so importing a folder again can
+    replace them (app/services/import_origins.py; docs/ready-to-build/import-export-launch.md §5). The on-open schema helper
+    may have created the table already; then its shape is checked. Imports made before have no
+    row: importing their folder again only adds, as it did."""
+    create_import_origins_table(connection)
+    columns = _table_columns(connection, table=IMPORT_ORIGINS_TABLE)
+    if columns != set(IMPORT_ORIGINS_COLUMNS):
+        raise RuntimeError(
+            f"Database migration 20→21 found an {IMPORT_ORIGINS_TABLE} table with other columns: {sorted(columns)}"
+        )
+    return 0
+
+
 # One step per database version, in order: the step at position N upgrades version N to N + 1.
 _MIGRATION_STEPS: tuple[Callable[..., int], ...] = (
     _migration_0_to_1,
@@ -543,6 +563,7 @@ _MIGRATION_STEPS: tuple[Callable[..., int], ...] = (
     add_file_first_pages_table,
     add_ai_chat_table,
     add_network_sharing_column,
+    add_import_origins_table,
 )
 _MIGRATIONS: dict[int, Callable[..., int]] = dict(enumerate(_MIGRATION_STEPS))
 assert len(_MIGRATION_STEPS) == CURRENT_DATABASE_VERSION, "every database version below the current one needs a step"

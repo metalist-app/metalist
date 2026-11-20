@@ -71,7 +71,7 @@ Written from a read-only look at the repo. Check the code references before rely
 
 - **§0 holds.** `handleDropEvent` (`keyboard-events.js`) makes the per-file notes; nothing in the front end reads a dropped folder (no `webkitGetAsEntry`, `getAsFileSystemHandle` or `webkitdirectory`); the tree takes only its own folders (`DRAG_TYPE`). The file limit is 100 MiB (`MAX_ATTACHMENT_BYTES`).
 - **A dropped folder can't reach today's import on any deployment, the personal one included.** The import reads a folder by its path on the server's machine (`imports.py`, `folderPath`, from `pick_folder`). A browser never gives a page a dropped folder's path, only its files. So §2 and §3 need §4's browser upload (listing, checklist, then the ticked files sent one by one) everywhere, not only on hosted. That is the larger part of this work, and §4 of `folder-import-and-file-previews.md` (with its resume rule) is the same piece.
-- **`importing-again` was dropped** the same day: an import only adds (`import-export-launch.md` §5). Importing a dropped folder again brings all of it in again beside the earlier import.
+- **`importing-again` was dropped** the same day: an import only adds (`import-export-launch.md` §5). Importing a dropped folder again brings all of it in again beside the earlier import. (Reversed 2026-11-20: the Summary then asks Keep both or Replace; `import-export-launch.md` §5, "Importing again".)
 - **Invariant 1 meets the bookmarks rule.** A browser's bookmarks export dropped alone asks Import Bookmarks or Keep as File wherever it is dropped (`docs/ui/references.md`). Dropped on a tree folder, which folder would its import go under?
 
 ### Open (ask the maintainer)

@@ -638,27 +638,29 @@ export const NotesAPI = {
     _importBody(choices, caller) {
         const {
             source, folderPath, splitMode, contentFormat, prefixFolder, addToExisting, excludedGroups, excludedFiles, includedFiles,
-            keepsMarkdownAsFiles, compressesImages, imageLongestSide,
+            keepsMarkdownAsFiles, compressesImages, imageLongestSide, folderName, changedSince, earlierNotes,
         } = choices;
         if (typeof source !== 'string' || typeof folderPath !== 'string' || folderPath.length === 0
             || typeof splitMode !== 'string' || typeof contentFormat !== 'string'
             || typeof prefixFolder !== 'string' || typeof addToExisting !== 'boolean'
             || !Array.isArray(excludedGroups) || !Array.isArray(excludedFiles) || !Array.isArray(includedFiles)
-            || typeof keepsMarkdownAsFiles !== 'boolean' || typeof compressesImages !== 'boolean' || !Number.isInteger(imageLongestSide)) {
+            || typeof keepsMarkdownAsFiles !== 'boolean' || typeof compressesImages !== 'boolean' || !Number.isInteger(imageLongestSide)
+            || typeof folderName !== 'string' || typeof changedSince !== 'string' || typeof earlierNotes !== 'string') {
             throw new Error(`NotesAPI.${caller} requires every import choice`);
         }
         return JSON.stringify({
             source, folderPath, splitMode, contentFormat, prefixFolder, addToExisting, excludedGroups, excludedFiles, includedFiles,
-            keepsMarkdownAsFiles, compressesImages, imageLongestSide,
+            keepsMarkdownAsFiles, compressesImages, imageLongestSide, folderName, changedSince, earlierNotes,
         });
     },
 
     // A folder of files grouped by type for the import's checklist, before anything is copied.
-    async scanImportFolder(folderPath) {
-        if (typeof folderPath !== 'string' || folderPath.length === 0) {
-            throw new Error('NotesAPI.scanImportFolder requires the folder');
+    // changedSince: only the files changed on or after that day ('2026-11-01'; '' for all).
+    async scanImportFolder(folderPath, changedSince) {
+        if (typeof folderPath !== 'string' || folderPath.length === 0 || typeof changedSince !== 'string') {
+            throw new Error('NotesAPI.scanImportFolder requires the folder and the day its files changed since');
         }
-        return this._apiCall(CONFIG.API.IMPORT.SCAN, { method: 'POST', body: JSON.stringify({ folderPath }) });
+        return this._apiCall(CONFIG.API.IMPORT.SCAN, { method: 'POST', body: JSON.stringify({ folderPath, changedSince }) });
     },
 
     // A dropped folder's checklist, from the browser's list of its files ([{ path, size }]):

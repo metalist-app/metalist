@@ -10,14 +10,24 @@ import html
 import mimetypes
 import uuid
 from concurrent.futures import ThreadPoolExecutor
+from collections.abc import Callable
 from dataclasses import dataclass, replace
 from datetime import datetime, timezone
+from functools import partial
 from pathlib import Path, PurePosixPath
 from types import SimpleNamespace
 from typing import Dict, List, Tuple
 
 from app.services.background_work import IMPORT_KEY, WorkProgress, background_work
 from app.services.file_storage import create_file, create_file_from_pieces
+from app.services.import_origins import (
+    FingerprintedPieces,
+    ImportedFile,
+    notes_fingerprint,
+    pieces_fingerprint,
+    record_import,
+    text_fingerprint,
+)
 from app.services.import_uploads import open_import_folder
 from app.services.obsidian_import.import_folder import ImportFolder
 from app.services.image_compression import COMPRESSIBLE_SUFFIXES, CompressedImage, ImageChoice, compressed_image, estimated_compressed_bytes
@@ -49,7 +59,16 @@ from app.services.virtual_folders import all_folder_tags
 from app.services.disk_space import full_disk_is_rejected, require_room_for_files
 from app.upload_limits import MAX_IN_MEMORY_FILE_BYTES
 from app.usecases.base import QueryCommand
-from app.usecases.delete_subtree import apply_restore_records
+from app.usecases.delete_subtree import apply_delete_subtree, apply_restore_records
+from app.usecases.import_again import (
+    KEEP_BOTH,
+    ImportedBefore,
+    changed_since_day,
+    is_changed_since,
+    meet_earlier_import,
+    nothing_changed_since,
+    nothing_to_bring_in,
+)
 
 # The root notes' parent: the top of the list.
 _TOP_LEVEL = None
@@ -99,6 +118,11 @@ class CmdImportObsidianVault(QueryCommand):
     images: ImageChoice
     token: str
     imported_at: datetime
+    # Importing again (import_again.py): the folder's name, the day files must have changed
+    # since ('' for any), and what happens to the notes of files that came in before.
+    folder_name: str
+    changed_since: str
+    earlier_notes: str
 
     def execute(self) -> Dict[str, object]:
         # Shown as it goes: the walkthrough's bar (the maintainer, 2026-11-02).
@@ -109,14 +133,21 @@ class CmdImportObsidianVault(QueryCommand):
         plan = _plan_import(
             source_key=self.source, folder_path=self.folder_path, split_mode=self.split_mode,
             content_format=self.content_format, folder_prefix=self.folder_prefix, imported_at=self.imported_at,
+            changed_since=self.changed_since,
         )
         if import_folder_exists(plan.folder_prefix) and not self.add_to_existing:
             raise InputRejected(f"{plan.folder_prefix} already exists. Tick Add to it, or choose another name.")
         is_new_folder = is_new_import_folder(plan.folder_prefix)
-        folder, vault, planned, source_tag = plan.folder, plan.vault, plan.planned, plan.source_tag
+        before = meet_earlier_import(
+            folder_name=self.folder_name, prefix_folder=plan.folder_prefix, fingerprints=plan.fingerprints,
+            choice=self.earlier_notes,
+        )
+        if nothing_to_bring_in(before, list(plan.fingerprints)):
+            raise InputRejected(NOTHING_TO_BRING_IN)
+        folder, vault, source_tag = plan.folder, plan.vault, plan.source_tag
         linked = _linked(
-            folder, vault, planned, source_tag=source_tag, folder_prefix=plan.folder_prefix,
-            images=self.images, token=self.token, progress=progress,
+            folder, vault, _with_earlier_root_ids(plan.planned, before), source_tag=source_tag, folder_prefix=plan.folder_prefix,
+            images=self.images, token=self.token, progress=progress, kept_paths=plan.kept_paths, before=before,
         )
         planned = linked.planned
         note_count = sum(count_notes(note.root) for note in planned) + len(linked.kept)
@@ -128,8 +159,11 @@ class CmdImportObsidianVault(QueryCommand):
         # The files after the list's last note, as Obsidian's file list
         # orders them (no import report: the maintainer, 2026-11-01).
         written_roots = [written for _path, written in roots]
-        records = root_records(written_roots)
-        apply_restore_records(records, self.token)
+        _write_roots(roots, before, self.token)
+        fingerprints = {**{note.source_path: plan.fingerprints[note.source_path]() for note in planned}, **linked.kept_fingerprints}
+        _record_import(
+            roots, fingerprints, folder_name=self.folder_name, prefix_folder=plan.folder_prefix, imported_at=self.imported_at,
+        )
         return {
             "status": "success", "noteCount": note_count,
             # Every note of this import has it: the wizard opens a search context on it.
@@ -151,6 +185,14 @@ class _ImportPlan:
     source_tag: str
     # The folder everything goes under, cleaned ('' for none).
     folder_prefix: str
+    # The Canvas, Base and Excalidraw files that come in, each in a note of its own.
+    kept_paths: List[PurePosixPath]
+    # Each file that gets a root note, by path: how to fingerprint it (import_origins.py).
+    fingerprints: Dict[str, Callable[[], str]]
+
+
+# Said when a folder imported again has nothing new and its old notes are not to be doubled.
+NOTHING_TO_BRING_IN = "Every file is as it was when you imported it: there is nothing to bring in."
 
 
 def import_folder_exists(folder_prefix: str) -> bool:
@@ -167,6 +209,7 @@ def is_new_import_folder(folder_prefix: str) -> bool:
 
 def _plan_import(
     *, source_key: str, folder_path: str, split_mode: str, content_format: str, folder_prefix: str, imported_at: datetime,
+    changed_since: str,
 ) -> _ImportPlan:
     if split_mode not in SPLIT_MODES or content_format not in CONTENT_FORMATS:
         raise InputRejected("Choose how to split the notes and what to write them in.")
@@ -181,6 +224,10 @@ def _plan_import(
     vault = read_vault(import_folder, reads_line_break_setting=source.follows_obsidian_line_breaks)
     if len(vault.markdown_files) == 0:
         raise InputRejected(f"{folder} holds no Markdown files. Choose a folder that does.")
+    since = changed_since_day(changed_since)
+    markdown_files = [vault_file for vault_file in vault.markdown_files if is_changed_since(vault_file.modified_at, since)]
+    if since is not None and len(markdown_files) == 0:
+        raise nothing_changed_since(since)
     source_tag = source_tag_for(imported_at, source.key)
     prefix = import_folder_prefix(folder_prefix)
     planned = [
@@ -188,10 +235,84 @@ def _plan_import(
             vault_file, uses_strict_line_breaks=vault.uses_strict_line_breaks, source_tag=source_tag,
             split_mode=split_mode, content_format=content_format, folder_prefix=prefix,
         )
-        for vault_file in vault.markdown_files
+        for vault_file in markdown_files
     ]
+    kept_paths = [
+        path for path in vault.other_files
+        if _is_kept_file(path) and is_changed_since(_modified_at(import_folder, path), since)
+    ]
+    fingerprints: Dict[str, Callable[[], str]] = {
+        **{str(vault_file.path): partial(text_fingerprint, vault_file.text) for vault_file in markdown_files},
+        **{str(path): partial(_file_fingerprint, import_folder, path) for path in kept_paths},
+    }
     return _ImportPlan(
         source=source, folder=import_folder, vault=vault, planned=planned, source_tag=source_tag, folder_prefix=prefix,
+        kept_paths=kept_paths, fingerprints=fingerprints,
+    )
+
+
+def _modified_at(folder: ImportFolder, path: PurePosixPath) -> datetime:
+    _created_at, modified_at = folder.file_times(path)
+    return modified_at
+
+
+def _file_fingerprint(folder: ImportFolder, path: PurePosixPath) -> str:
+    return pieces_fingerprint(folder.pieces(path))
+
+
+def _with_earlier_root_ids(planned: List[PlannedNote], before: ImportedBefore) -> List[PlannedNote]:
+    """Each file's root note under the id of its old note when that one stays or is replaced:
+    links to it, from this import's notes and from older ones, lead to the same note."""
+    return [
+        replace(note, root=replace(note.root, note_id=before.root_id(note.source_path, note.root.note_id)))
+        for note in planned
+    ]
+
+
+def _write_roots(roots: List[Tuple[str, "WrittenRoot"]], before: ImportedBefore, token: str) -> None:
+    """The root notes written, each with its subtree: one that replaces its old note in that
+    note's place (wherever it was moved since), the others after the list's last note."""
+    added: List[WrittenRoot] = []
+    for path, written in roots:
+        if before.is_replaced(path):
+            _replace_in_place(written, token)
+        else:
+            added.append(written)
+    if added:
+        apply_restore_records(root_records(added), token)
+
+
+def _replace_in_place(written: "WrittenRoot", token: str) -> None:
+    root_id = written.node.note_id
+    parent_id = store.get(root_id).parent_id
+    siblings = store.children(parent_id)
+    place = siblings.index(root_id)
+    prev_id = None
+    if place > 0:
+        prev_id = siblings[place - 1]
+    next_id = None
+    if place + 1 < len(siblings):
+        next_id = siblings[place + 1]
+    apply_delete_subtree(root_id)
+    records = [_record(written.node, written, parent_id=parent_id, prev_id=prev_id, next_id=next_id)]
+    _append_children(records, written.node, written, parent_id=root_id)
+    apply_restore_records(records, token)
+
+
+def _record_import(
+    roots: List[Tuple[str, "WrittenRoot"]], fingerprints: Dict[str, str], *, folder_name: str, prefix_folder: str,
+    imported_at: datetime,
+) -> None:
+    """Where the notes just written came from, kept for the next import of the folder."""
+    record_import(
+        folder_name=folder_name, prefix_folder=prefix_folder, imported_at=imported_at,
+        files=[
+            ImportedFile(
+                path=path, fingerprint=fingerprints[path], root_id=written.node.note_id,
+                written=notes_fingerprint(written.node.note_id),
+            )
+            for path, written in roots
+        ],
     )
 
 
@@ -207,32 +328,44 @@ class CmdPreviewImport(QueryCommand):
     content_format: str
     folder_prefix: str
     imported_at: datetime
+    folder_name: str
+    changed_since: str
+    earlier_notes: str
 
     def execute(self) -> Dict[str, object]:
         plan = _plan_import(
             source_key=self.source, folder_path=self.folder_path, split_mode=self.split_mode,
             content_format=self.content_format, folder_prefix=self.folder_prefix, imported_at=self.imported_at,
+            changed_since=self.changed_since,
         )
+        before = meet_earlier_import(
+            folder_name=self.folder_name, prefix_folder=plan.folder_prefix, fingerprints=plan.fingerprints,
+            choice=self.earlier_notes,
+        )
+        # What comes in: not the files that are as they were, when their old notes are replaced.
+        planned = [note for note in plan.planned if not before.is_left(note.source_path)]
         index = VaultIndex(plan.planned, plan.vault.other_files)
         resolved = [
-            _resolve(index, reference, from_path=note.source_path) for note in plan.planned for reference in note.links
+            _resolve(index, reference, from_path=note.source_path) for note in planned for reference in note.links
         ]
-        kept_paths = [path for path in plan.vault.other_files if _is_kept_file(path)]
+        kept_paths = [path for path in plan.kept_paths if not before.is_left(str(path))]
         linked_paths = {item.file_path for item in resolved if item.file_path is not None}
-        findings = [note.findings for note in plan.planned]
+        findings = [note.findings for note in planned]
         kept_note_count = len(kept_paths)
         return {
             # The folder the notes go into ('' for none), as the summary shows it.
             "prefixFolder": plan.folder_prefix,
-            "fileCount": len(plan.planned),
-            "noteCount": sum(count_notes(note.root) for note in plan.planned) + kept_note_count,
+            # The folder came in before: what the Summary asks about (import_again.py).
+            "again": before.summary(),
+            "fileCount": len(planned),
+            "noteCount": sum(count_notes(note.root) for note in planned) + kept_note_count,
             # The notes at the top level of the list (each file's, and each kept file's), the report aside.
-            "rootNoteCount": len(plan.planned) + kept_note_count,
+            "rootNoteCount": len(planned) + kept_note_count,
             # The summary says what each becomes: Markdown files notes, the rest a file in a note of its own.
-            "textFileCount": len(plan.planned),
+            "textFileCount": len(planned),
             "keptFileCount": kept_note_count,
             "attachmentCount": sum(1 for path in linked_paths if not _is_kept_file(path)),
-            "folderTagCount": len({note.folder_tag for note in plan.planned if note.folder_tag != ""}),
+            "folderTagCount": len({note.folder_tag for note in planned if note.folder_tag != ""}),
             "filesWithCommentsCount": sum(1 for finding in findings if finding.has_comments),
             "blockIdCount": sum(finding.block_id_count for finding in findings),
             "calloutCount": sum(finding.callout_count for finding in findings),
@@ -260,30 +393,39 @@ class _Linked:
 
     planned: List[PlannedNote]
     kept: List[Tuple[str, WrittenRoot]]
+    # The Canvas, Base and Excalidraw files' fingerprints, by path.
+    kept_fingerprints: Dict[str, str]
 
 
 def _linked(
     folder: ImportFolder, vault: VaultContents, planned: List[PlannedNote], *, source_tag: str, folder_prefix: str,
-    images: ImageChoice, token: str, progress: WorkProgress,
+    images: ImageChoice, token: str, progress: WorkProgress, kept_paths: List[PurePosixPath], before: ImportedBefore,
 ) -> _Linked:
     """Every link and embed resolved, and the files they reach stored (with the Canvas, Base
-    and Excalidraw files, which come in linked to or not)."""
+    and Excalidraw files, which come in linked to or not). A file that is as it was imported,
+    its old notes to be replaced, is left: links to it lead to the note it has."""
     index = VaultIndex(planned, vault.other_files)
-    resolved = {note.source_path: [_resolve(index, reference, from_path=note.source_path) for reference in note.links] for note in planned}
-    kept_paths = [path for path in vault.other_files if _is_kept_file(path)]
+    written = [note for note in planned if not before.is_left(note.source_path)]
+    resolved = {note.source_path: [_resolve(index, reference, from_path=note.source_path) for reference in note.links] for note in written}
+    kept_paths = [path for path in kept_paths if not before.is_left(str(path))]
     linked_paths = {item.file_path for items in resolved.values() for item in items if item.file_path is not None}
-    file_ids = _store_files(
+    stored = _store_files(
         folder, sorted({*linked_paths, *kept_paths}, key=_path_key), images=images, token=token, progress=progress,
     )
+    file_ids = stored.file_ids
     return _Linked(
         planned=[
             replace(note, root=_with_links(note.root, _replacements(resolved[note.source_path], file_ids)))
-            for note in planned
+            for note in written
         ],
         kept=[
-            _kept_file_note(folder, path, file_ids[path], source_tag=source_tag, folder_prefix=folder_prefix)
+            _file_note(
+                folder, path, file_ids[path], source_tag=source_tag, folder_prefix=folder_prefix,
+                note_id=before.root_id(str(path), str(uuid.uuid4())),
+            )
             for path in kept_paths if path in file_ids
         ],
+        kept_fingerprints={str(path): stored.fingerprints[path] for path in kept_paths if path in file_ids},
     )
 
 
@@ -347,35 +489,50 @@ def _with_links(node: NoteNode, replacements: Dict[int, str]) -> NoteNode:
     )
 
 
+@dataclass(frozen=True)
+class _StoredFiles:
+    """The files stored: each one's id in MetaList, and its fingerprint as it was in the folder."""
+
+    file_ids: Dict[PurePosixPath, str]
+    fingerprints: Dict[PurePosixPath, str]
+
+
 def _store_files(
     folder: ImportFolder, paths: List[PurePosixPath], *, images: ImageChoice, token: str, progress: WorkProgress,
-) -> Dict[PurePosixPath, str]:
+) -> _StoredFiles:
     """Each file at paths stored in MetaList (its id by path), images compressed when images say.
     progress counts each file stored."""
     require_room_for_files([folder.size(path) for path in paths])
     progress.set_total(len(paths))
     file_ids: Dict[PurePosixPath, str] = {}
+    fingerprints: Dict[PurePosixPath, str] = {}
     # A few at a time: compressing runs on threads, never far ahead of the storing.
     with full_disk_is_rejected(), ThreadPoolExecutor(max_workers=_COMPRESSING_THREADS) as executor:
         for start in range(0, len(paths), _READ_AHEAD_FILES):
             batch = paths[start:start + _READ_AHEAD_FILES]
             compressed_files = executor.map(lambda path: _compressed_if_asked(folder, path, images=images), batch)
             for path, compressed in zip(batch, compressed_files):
-                file_ids[path] = _store_one_file(folder, path, compressed=compressed, token=token)
+                file_ids[path], fingerprints[path] = _store_one_file(folder, path, compressed=compressed, token=token)
                 progress.advance()
-    return file_ids
+    return _StoredFiles(file_ids=file_ids, fingerprints=fingerprints)
 
 
-def _store_one_file(folder: ImportFolder, path: PurePosixPath, *, compressed: CompressedImage | None, token: str) -> str:
-    """A compressed image as it was made, every other file streamed from the folder."""
+def _store_one_file(
+    folder: ImportFolder, path: PurePosixPath, *, compressed: CompressedImage | None, token: str,
+) -> Tuple[str, str]:
+    """A compressed image as it was made, every other file streamed from the folder: its id,
+    and the fingerprint of the file as the folder has it."""
     if compressed is not None:
-        return create_file(
+        stored = create_file(
             original_filename=compressed.filename, mime_type=compressed.mime_type, content_bytes=compressed.content, token=token,
-        ).id
+        )
+        return stored.id, _file_fingerprint(folder, path)
     mime_type, _encoding = mimetypes.guess_type(path.name)
     if mime_type is None:
         mime_type = _UNKNOWN_MIME_TYPE
-    return create_file_from_pieces(pieces=folder.pieces(path), original_filename=path.name, mime_type=mime_type, token=token).id
+    pieces = FingerprintedPieces(folder.pieces(path))
+    file_id = create_file_from_pieces(pieces=pieces, original_filename=path.name, mime_type=mime_type, token=token).id
+    return file_id, pieces.fingerprint()
 
 
 def _compressed_if_asked(folder: ImportFolder, path: PurePosixPath, *, images: ImageChoice) -> CompressedImage | None:
@@ -386,14 +543,17 @@ def _compressed_if_asked(folder: ImportFolder, path: PurePosixPath, *, images: I
     return compressed_image(folder.read_bytes(path), path.name, longest_side_px=images.longest_side_px)
 
 
-def _kept_file_note(
-    folder: ImportFolder, path: PurePosixPath, file_id: str, *, source_tag: str, folder_prefix: str,
+def _file_note(
+    folder: ImportFolder, path: PurePosixPath, file_id: str, *, source_tag: str, folder_prefix: str, note_id: str,
 ) -> Tuple[str, WrittenRoot]:
-    """A Canvas, Base or Excalidraw file's own note: the file embedded, tagged as a note of its folder."""
+    """A file's own note (a vault's Canvas, Base or Excalidraw file; any file of a folder of
+    files): the file alone (its card shows its name; the maintainer, 2026-11-01: a name line
+    over it said it twice), tagged as a note of its folder. Search finds it by the file's name,
+    and by its words once its text is read (file_text_search.py)."""
     tags = [tag for tag in (folder_tag_for(path, folder_prefix), source_tag) if tag != ""]
-    _created_at, modified_at = folder.file_times(path)
+    modified_at = _modified_at(folder, path)
     node = NoteNode(
-        note_id=str(uuid.uuid4()), content_html=plain_text_to_note_html(f"{_EMBED_MARK}[[{file_id}]]"),
+        note_id=note_id, content_html=plain_text_to_note_html(f"{_EMBED_MARK}[[{file_id}]]"),
         tags=tuple(tags), anchors=(), children=(),
     )
     return str(path), WrittenRoot(node=node, created_at=modified_at, updated_at=modified_at)
@@ -504,11 +664,13 @@ class _FilesPlan:
     attached: List[PurePosixPath]
     source_tag: str
     folder_prefix: str
+    # Each file, by path: how to fingerprint it (import_origins.py).
+    fingerprints: Dict[str, Callable[[], str]]
 
 
 def _plan_folder_of_files(
     *, folder_path: str, selection: FileSelection, split_mode: str, content_format: str, folder_prefix: str,
-    imported_at: datetime,
+    imported_at: datetime, changed_since: str,
 ) -> _FilesPlan:
     if split_mode not in SPLIT_MODES or content_format not in CONTENT_FORMATS:
         raise InputRejected("Choose how to split the notes and what to write them in.")
@@ -529,6 +691,10 @@ def _plan_folder_of_files(
     chosen = [folder_file for folder_file in found if selection.includes(folder_file)]
     if not chosen:
         raise InputRejected("Nothing to import: tick at least one kind of file.")
+    since = changed_since_day(changed_since)
+    chosen = [folder_file for folder_file in chosen if is_changed_since(_modified_at(import_folder, folder_file.path), since)]
+    if since is not None and not chosen:
+        raise nothing_changed_since(since)
     source_tag = source_tag_for(imported_at, FILES.key)
     prefix = import_folder_prefix(folder_prefix)
     text_files: List[VaultFile] = []
@@ -551,9 +717,13 @@ def _plan_folder_of_files(
         )
         for text_file in text_files
     ]
+    fingerprints: Dict[str, Callable[[], str]] = {
+        **{str(text_file.path): partial(text_fingerprint, text_file.text) for text_file in text_files},
+        **{str(path): partial(_file_fingerprint, import_folder, path) for path in attached},
+    }
     return _FilesPlan(
         folder=import_folder, planned=planned, attached=attached,
-        source_tag=source_tag, folder_prefix=prefix,
+        source_tag=source_tag, folder_prefix=prefix, fingerprints=fingerprints,
     )
 
 
@@ -567,31 +737,43 @@ class CmdPreviewFolderOfFiles(QueryCommand):
     content_format: str
     folder_prefix: str
     imported_at: datetime
+    folder_name: str
+    changed_since: str
+    earlier_notes: str
 
     def execute(self) -> Dict[str, object]:
         plan = _plan_folder_of_files(
             folder_path=self.folder_path, selection=self.selection, split_mode=self.split_mode,
             content_format=self.content_format, folder_prefix=self.folder_prefix, imported_at=self.imported_at,
+            changed_since=self.changed_since,
         )
+        before = meet_earlier_import(
+            folder_name=self.folder_name, prefix_folder=plan.folder_prefix, fingerprints=plan.fingerprints,
+            choice=self.earlier_notes,
+        )
+        # What comes in: not the files that are as they were, when their old notes are replaced.
+        planned = [note for note in plan.planned if not before.is_left(note.source_path)]
+        attached = [path for path in plan.attached if not before.is_left(str(path))]
         index = VaultIndex(plan.planned, plan.attached)
         resolved = [
-            _resolve(index, reference, from_path=note.source_path) for note in plan.planned for reference in note.links
+            _resolve(index, reference, from_path=note.source_path) for note in planned for reference in note.links
         ]
-        findings = [note.findings for note in plan.planned]
-        folder_tags = {note.folder_tag for note in plan.planned} | {
-            folder_tag_for(path, plan.folder_prefix) for path in plan.attached
+        findings = [note.findings for note in planned]
+        folder_tags = {note.folder_tag for note in planned} | {
+            folder_tag_for(path, plan.folder_prefix) for path in attached
         }
         return {
             "prefixFolder": plan.folder_prefix,
-            "fileCount": len(plan.planned) + len(plan.attached),
-            "noteCount": sum(count_notes(note.root) for note in plan.planned) + len(plan.attached),
-            "rootNoteCount": len(plan.planned) + len(plan.attached),
-            "textFileCount": len(plan.planned),
-            "keptFileCount": len(plan.attached),
+            "again": before.summary(),
+            "fileCount": len(planned) + len(attached),
+            "noteCount": sum(count_notes(note.root) for note in planned) + len(attached),
+            "rootNoteCount": len(planned) + len(attached),
+            "textFileCount": len(planned),
+            "keptFileCount": len(attached),
             # Of those, images: each shown as its picture in its note (the maintainer, 2026-11-01:
             # say whether they come in inside notes or as files). By name, wherever they sit.
-            "keptImageCount": sum(1 for path in plan.attached if group_of(PurePosixPath(path.name)) == IMAGES),
-            "attachmentCount": len(plan.attached),
+            "keptImageCount": sum(1 for path in attached if group_of(PurePosixPath(path.name)) == IMAGES),
+            "attachmentCount": len(attached),
             "folderTagCount": len(folder_tags - {""}),
             "filesWithCommentsCount": sum(1 for finding in findings if finding.has_comments),
             "blockIdCount": sum(finding.block_id_count for finding in findings),
@@ -619,6 +801,10 @@ class CmdImportFolderOfFiles(QueryCommand):
     images: ImageChoice
     token: str
     imported_at: datetime
+    # Importing again, as CmdImportObsidianVault's.
+    folder_name: str
+    changed_since: str
+    earlier_notes: str
 
     def execute(self) -> Dict[str, object]:
         # Shown as it goes: the walkthrough's bar (the maintainer, 2026-11-02).
@@ -629,23 +815,36 @@ class CmdImportFolderOfFiles(QueryCommand):
         plan = _plan_folder_of_files(
             folder_path=self.folder_path, selection=self.selection, split_mode=self.split_mode,
             content_format=self.content_format, folder_prefix=self.folder_prefix, imported_at=self.imported_at,
+            changed_since=self.changed_since,
         )
         if import_folder_exists(plan.folder_prefix) and not self.add_to_existing:
             raise InputRejected(f"{plan.folder_prefix} already exists. Tick Add to it, or choose another name.")
         is_new_folder = is_new_import_folder(plan.folder_prefix)
-        file_ids = _store_files(plan.folder, plan.attached, images=self.images, token=self.token, progress=progress)
-        index = VaultIndex(plan.planned, plan.attached)
+        before = meet_earlier_import(
+            folder_name=self.folder_name, prefix_folder=plan.folder_prefix, fingerprints=plan.fingerprints,
+            choice=self.earlier_notes,
+        )
+        if nothing_to_bring_in(before, list(plan.fingerprints)):
+            raise InputRejected(NOTHING_TO_BRING_IN)
+        attached_paths = [path for path in plan.attached if not before.is_left(str(path))]
+        stored = _store_files(plan.folder, attached_paths, images=self.images, token=self.token, progress=progress)
+        file_ids = stored.file_ids
+        # Links to a file left as it is lead to the note it has (its text file's; a file kept
+        # as a file has no id here, so a link to it stays as written).
+        all_planned = _with_earlier_root_ids(plan.planned, before)
+        index = VaultIndex(all_planned, plan.attached)
         planned = [
             replace(note, root=_with_links(note.root, _replacements(
                 [_resolve(index, reference, from_path=note.source_path) for reference in note.links], file_ids,
             )))
-            for note in plan.planned
+            for note in all_planned if not before.is_left(note.source_path)
         ]
         attached = [
-            _attached_file_note(
+            _file_note(
                 plan.folder, path, file_ids[path], source_tag=plan.source_tag, folder_prefix=plan.folder_prefix,
+                note_id=before.root_id(str(path), str(uuid.uuid4())),
             )
-            for path in plan.attached
+            for path in attached_paths
         ]
         roots = [
             *((note.source_path, WrittenRoot(node=note.root, created_at=note.created_at, updated_at=note.updated_at)) for note in planned),
@@ -653,25 +852,17 @@ class CmdImportFolderOfFiles(QueryCommand):
         ]
         roots.sort(key=lambda pair: _file_list_key(PurePosixPath(pair[0])))
         written_roots = [written for _path, written in roots]
-        apply_restore_records(root_records(written_roots), self.token)
+        _write_roots(roots, before, self.token)
+        fingerprints = {
+            **{note.source_path: plan.fingerprints[note.source_path]() for note in planned},
+            **{str(path): stored.fingerprints[path] for path in attached_paths},
+        }
+        _record_import(
+            roots, fingerprints, folder_name=self.folder_name, prefix_folder=plan.folder_prefix, imported_at=self.imported_at,
+        )
         note_count = sum(count_notes(note.root) for note in planned) + sum(count_notes(written.node) for _path, written in attached)
         return {"status": "success", "noteCount": note_count, "sourceTag": plan.source_tag,
                 "firstRootId": first_root_id(written_roots), "prefixFolder": plan.folder_prefix, "isNewFolder": is_new_folder}
-
-
-def _attached_file_note(
-    folder: ImportFolder, path: PurePosixPath, file_id: str, *, source_tag: str, folder_prefix: str,
-) -> Tuple[str, WrittenRoot]:
-    """A file's own note: the file alone (its card shows its name; the maintainer, 2026-11-01:
-    a name line over it said it twice), tagged as a note of its folder. Search finds it by the
-    file's name, and by its words once its text is read (file_text_search.py)."""
-    tags = [tag for tag in (folder_tag_for(path, folder_prefix), source_tag) if tag != ""]
-    _created_at, modified_at = folder.file_times(path)
-    node = NoteNode(
-        note_id=str(uuid.uuid4()), content_html=plain_text_to_note_html(f"{_EMBED_MARK}[[{file_id}]]"),
-        tags=tuple(tags), anchors=(), children=(),
-    )
-    return str(path), WrittenRoot(node=node, created_at=modified_at, updated_at=modified_at)
 
 
 @dataclass
@@ -687,18 +878,21 @@ class CmdEstimateImportImages(QueryCommand):
     content_format: str
     folder_prefix: str
     imported_at: datetime
+    changed_since: str
 
     def execute(self) -> Dict[str, object]:
         if self.source == FILES.key:
             files_plan = _plan_folder_of_files(
                 folder_path=self.folder_path, selection=self.selection, split_mode=self.split_mode,
                 content_format=self.content_format, folder_prefix=self.folder_prefix, imported_at=self.imported_at,
+                changed_since=self.changed_since,
             )
             folder, stored = files_plan.folder, files_plan.attached
         else:
             plan = _plan_import(
                 source_key=self.source, folder_path=self.folder_path, split_mode=self.split_mode,
                 content_format=self.content_format, folder_prefix=self.folder_prefix, imported_at=self.imported_at,
+                changed_since=self.changed_since,
             )
             folder, stored = plan.folder, _linked_file_paths(plan)
         images = [

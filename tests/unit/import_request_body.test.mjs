@@ -7,6 +7,7 @@ import test from 'node:test';
 const IMPORT_REQUEST_FIELDS = [
     'source', 'folderPath', 'splitMode', 'contentFormat', 'prefixFolder', 'addToExisting',
     'excludedGroups', 'excludedFiles', 'includedFiles', 'keepsMarkdownAsFiles', 'compressesImages', 'imageLongestSide',
+    'folderName', 'changedSince', 'earlierNotes',
 ];
 
 test('an import request carries every field the server requires, the checklist\'s files too', async (t) => {
@@ -27,6 +28,7 @@ test('an import request carries every field the server requires, the checklist\'
         source: 'files', folderPath: '/notes', splitMode: 'none', contentFormat: 'rich', prefixFolder: 'Notes',
         addToExisting: true, excludedGroups: ['hidden'], excludedFiles: ['a.png'], includedFiles: ['.config/b.txt'],
         keepsMarkdownAsFiles: true, compressesImages: true, imageLongestSide: 1920,
+        folderName: 'notes', changedSince: '2026-11-01', earlierNotes: 'replace',
     }, 'previewImport'));
     assert.deepEqual(Object.keys(body).sort(), [...IMPORT_REQUEST_FIELDS].sort());
     assert.deepEqual(body.excludedFiles, ['a.png']);
