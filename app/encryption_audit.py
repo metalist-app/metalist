@@ -289,6 +289,11 @@ _AI_CHAT_DATABASE_VERSION = 19
 _LAUNCH_PROFILE_TABLE = "namespace_launch_profile"
 _SHARED_ON_NETWORK_COLUMNS = frozenset({"shared_on_network"})
 _SHARED_ON_NETWORK_DATABASE_VERSION = 20
+# Migration 20→21 added the import_origins table (where each import's notes came from, a row
+# per import, its one payload encrypted). Before version 21 it may be missing, or already
+# present because opening a database creates it ahead of the migration.
+_IMPORT_ORIGINS_TABLE = "import_origins"
+_IMPORT_ORIGINS_DATABASE_VERSION = 21
 
 _PROPOSED_TAG_COLUMNS = frozenset(
     {
@@ -345,6 +350,10 @@ _MAIN_SCHEMA_BEFORE_CONTENT_MIGRATIONS = {
             "id", "state_json", "state_encryption_nonce", "state_encryption_tag",
             "created_at", "updated_at",
         }
+    ),
+    # Where each import's notes came from, from database version 21.
+    _IMPORT_ORIGINS_TABLE: frozenset(
+        {"id", "state_json", "state_encryption_nonce", "state_encryption_tag", "created_at"}
     ),
     "link_titles": frozenset(
         {
@@ -510,6 +519,9 @@ _MAIN_PAYLOADS_WITHOUT_SEARCH_HISTORY = (
     _PayloadSpec("embedded_documents", "payload", "nonce", "tag", "text", is_nullable=False),
     _PayloadSpec("tab_state", "state_json", "state_encryption_nonce", "state_encryption_tag", "text", is_nullable=False),
     _PayloadSpec(_AI_CHAT_TABLE, "state_json", "state_encryption_nonce", "state_encryption_tag", "text", is_nullable=False),
+    _PayloadSpec(
+        _IMPORT_ORIGINS_TABLE, "state_json", "state_encryption_nonce", "state_encryption_tag", "text", is_nullable=False,
+    ),
     _PayloadSpec("link_titles", "url", "url_encryption_nonce", "url_encryption_tag", "text", is_nullable=False),
     _PayloadSpec(
         "link_titles", "title", "title_encryption_nonce", "title_encryption_tag", "text",
@@ -661,6 +673,8 @@ _MIGRATION_DEFERRED_PLAINTEXT_FIELDS_BY_DATABASE_VERSION = dict(enumerate((
     frozenset(),
     # version 19
     frozenset(),
+    # version 20
+    frozenset(),
 )))
 
 
@@ -743,6 +757,8 @@ def _main_schema_for_database_version(
         resolved_schema = {table: columns for table, columns in resolved_schema.items() if table != _LINK_ICONS_TABLE}
     if database_version < _AI_CHAT_DATABASE_VERSION and _AI_CHAT_TABLE not in actual_tables:
         resolved_schema = {table: columns for table, columns in resolved_schema.items() if table != _AI_CHAT_TABLE}
+    if database_version < _IMPORT_ORIGINS_DATABASE_VERSION and _IMPORT_ORIGINS_TABLE not in actual_tables:
+        resolved_schema = {table: columns for table, columns in resolved_schema.items() if table != _IMPORT_ORIGINS_TABLE}
     # Before version 20 the network-sharing choice may be absent, or already added by the on-open
     # schema helper.
     if database_version < _SHARED_ON_NETWORK_DATABASE_VERSION and _SHARED_ON_NETWORK_COLUMNS.isdisjoint(

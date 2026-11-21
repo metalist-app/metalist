@@ -13,6 +13,10 @@ const MAX_SUGGESTION_HEIGHT = 240;
 const MIN_SUGGESTION_HEIGHT = 80;
 const MIN_SPACE_FOR_DOWN = 160;
 const POSITION_MARGIN = 12;
+// On the list once the pointer has moved over it: only then does pointing highlight an entry
+// (main.css). A list that opens under a pointer at rest, while the user types, highlights
+// nothing by it (the maintainer, 2026-11-18: an entry lit up that nobody pointed at).
+const POINTED_CLASS = 'is-pointed';
 
 const moduleState = ApplicationState.createFields('tag-suggestions-service', {
     pendingTimer: null,
@@ -180,6 +184,29 @@ function requireSuggestionLabel(labelsBySuggestion, suggestion) {
     return label;
 }
 
+// The pointer's first report over a new list is where it rests (a browser reports a pointer
+// that has not moved when something appears under it); a report from anywhere else is a move.
+function watchPointerOver(container) {
+    if (container.dataset.pointerWatched === 'true') return;
+    container.dataset.pointerWatched = 'true';
+    container.addEventListener('mousemove', (event) => {
+        const at = `${event.clientX},${event.clientY}`;
+        if (container.dataset.pointerRestsAt === undefined) {
+            container.dataset.pointerRestsAt = at;
+            return;
+        }
+        if (container.dataset.pointerRestsAt !== at && !container.classList.contains(POINTED_CLASS)) {
+            container.classList.add(POINTED_CLASS);
+        }
+    }, { passive: true });
+}
+
+// A list drawn anew starts with no entry pointed at.
+function forgetPointer(container) {
+    if (container.classList.contains(POINTED_CLASS)) container.classList.remove(POINTED_CLASS);
+    if (container.dataset.pointerRestsAt !== undefined) delete container.dataset.pointerRestsAt;
+}
+
 function renderSuggestions(tagBarInput, builtForText, suggestions, reasonsByTag, labelsBySuggestion) {
     if (typeof builtForText !== 'string') {
         throw new Error('renderSuggestions requires the text the list was built for');
@@ -194,6 +221,8 @@ function renderSuggestions(tagBarInput, builtForText, suggestions, reasonsByTag,
     }
 
     positionSuggestions(tagBar, container);
+    watchPointerOver(container);
+    forgetPointer(container);
 
     container.innerHTML = '';
     for (const tag of suggestions) {
@@ -290,6 +319,7 @@ export function updateTagSuggestions(tagBarInput) {
             context.explicitTags,
             context.prefix,
             contentHtml,
+            ModeContext.getExecutedSearchQuery(),
             requestController.signal
         ).catch((error) => {
             rethrowUnexpectedError(error);

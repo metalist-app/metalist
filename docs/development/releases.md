@@ -7,7 +7,10 @@ the version on the command line authorizes that one release attempt.
 Prepare the release on a feature branch, including the version change in
 `app/version.py` and its notes as a `## Changes in X.Y.Z` section at the top of
 `CHANGELOG.md` (then `.venv/bin/python scripts/sync_release_notes_help.py`). Use focused checks while developing. After review and human
-testing, merge it to `main` and push `main`; that push runs the full matrix once.
+testing, push the branch and check it on GitHub (`.venv/bin/python scripts/check_branch.py`,
+both workflows on the branch's commit; since 2026-11-18, AGENTS.md "Check Before Merging"), so a
+red run never reaches `main`. Then merge it to `main` and push `main`; that push's run is the
+release's evidence.
 The automatic **Publish to PyPI** main workflow must pass for that exact commit.
 Then run:
 

@@ -638,27 +638,29 @@ export const NotesAPI = {
     _importBody(choices, caller) {
         const {
             source, folderPath, splitMode, contentFormat, prefixFolder, addToExisting, excludedGroups, excludedFiles, includedFiles,
-            keepsMarkdownAsFiles, compressesImages, imageLongestSide,
+            keepsMarkdownAsFiles, compressesImages, imageLongestSide, folderName, changedSince, earlierNotes,
         } = choices;
         if (typeof source !== 'string' || typeof folderPath !== 'string' || folderPath.length === 0
             || typeof splitMode !== 'string' || typeof contentFormat !== 'string'
             || typeof prefixFolder !== 'string' || typeof addToExisting !== 'boolean'
             || !Array.isArray(excludedGroups) || !Array.isArray(excludedFiles) || !Array.isArray(includedFiles)
-            || typeof keepsMarkdownAsFiles !== 'boolean' || typeof compressesImages !== 'boolean' || !Number.isInteger(imageLongestSide)) {
+            || typeof keepsMarkdownAsFiles !== 'boolean' || typeof compressesImages !== 'boolean' || !Number.isInteger(imageLongestSide)
+            || typeof folderName !== 'string' || typeof changedSince !== 'string' || typeof earlierNotes !== 'string') {
             throw new Error(`NotesAPI.${caller} requires every import choice`);
         }
         return JSON.stringify({
             source, folderPath, splitMode, contentFormat, prefixFolder, addToExisting, excludedGroups, excludedFiles, includedFiles,
-            keepsMarkdownAsFiles, compressesImages, imageLongestSide,
+            keepsMarkdownAsFiles, compressesImages, imageLongestSide, folderName, changedSince, earlierNotes,
         });
     },
 
     // A folder of files grouped by type for the import's checklist, before anything is copied.
-    async scanImportFolder(folderPath) {
-        if (typeof folderPath !== 'string' || folderPath.length === 0) {
-            throw new Error('NotesAPI.scanImportFolder requires the folder');
+    // changedSince: only the files changed on or after that day ('2026-11-01'; '' for all).
+    async scanImportFolder(folderPath, changedSince) {
+        if (typeof folderPath !== 'string' || folderPath.length === 0 || typeof changedSince !== 'string') {
+            throw new Error('NotesAPI.scanImportFolder requires the folder and the day its files changed since');
         }
-        return this._apiCall(CONFIG.API.IMPORT.SCAN, { method: 'POST', body: JSON.stringify({ folderPath }) });
+        return this._apiCall(CONFIG.API.IMPORT.SCAN, { method: 'POST', body: JSON.stringify({ folderPath, changedSince }) });
     },
 
     // A dropped folder's checklist, from the browser's list of its files ([{ path, size }]):
@@ -675,15 +677,17 @@ export const NotesAPI = {
         return this._apiCall(CONFIG.API.IMPORT.UPLOADS, { method: 'POST', body: JSON.stringify({}) });
     },
 
-    // One ticked file, at its path in the dropped folder.
+    // One ticked file, at its path in the dropped folder, with the date it was last changed:
+    // its notes are dated by it, and "Changed since" reads it.
     async uploadImportFile(uploadId, path, file) {
-        if (typeof uploadId !== 'string' || typeof path !== 'string' || !(file instanceof Blob)) {
+        if (typeof uploadId !== 'string' || typeof path !== 'string' || !(file instanceof File)) {
             throw new Error('NotesAPI.uploadImportFile requires the upload, the path and the file');
         }
         // A few at a time, as previews loading meanwhile are (file-transfer-slots.js).
         const { response, answer } = await inTransferSlot(async () => {
             const formData = new FormData();
             formData.append('path', path);
+            formData.append('modified', String(file.lastModified));
             formData.append('file', file);
             const sent = await fetch(CONFIG.API.IMPORT.UPLOAD_FILE(uploadId), {
                 method: 'POST', headers: buildAuthHeaders(false), body: formData,
@@ -1160,7 +1164,8 @@ export const NotesAPI = {
         });
     },
 
-    async fetchTagSuggestions(noteId, anchors, explicitTags, prefix, contentHtml, signal) {
+    // search: the search of the list the note is edited in (a tag it excludes is not offered unasked).
+    async fetchTagSuggestions(noteId, anchors, explicitTags, prefix, contentHtml, search, signal) {
         if (typeof noteId !== 'string' || noteId.length === 0) {
             throw new Error('NotesAPI.fetchTagSuggestions requires noteId string');
         }
@@ -1176,6 +1181,9 @@ export const NotesAPI = {
         if (typeof contentHtml !== 'string') {
             throw new Error('NotesAPI.fetchTagSuggestions requires contentHtml string');
         }
+        if (typeof search !== 'string') {
+            throw new Error('NotesAPI.fetchTagSuggestions requires search string');
+        }
         if (typeof signal !== 'undefined' && (signal === null || typeof signal !== 'object')) {
             throw new Error('NotesAPI.fetchTagSuggestions requires signal object when provided');
         }
@@ -1184,7 +1192,8 @@ export const NotesAPI = {
             anchors: anchors,
             explicit_tags: explicitTags,
             prefix: prefix,
-            content_html: contentHtml
+            content_html: contentHtml,
+            search: search
         };
         const options = {
             method: 'POST',

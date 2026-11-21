@@ -10,8 +10,8 @@ const DROP_REQUESTS_QUIET_MS = 800;
 const DROP_SETTLE_TIMEOUT_MS = 15000;
 
 // Dropped files are shown, not copied (docs/ready-to-build/files-shown-not-copied.md, agreed
-// 2026-11-03): a dropped file is a card, with no preview note under it. A dropped .md file
-// opens the import walkthrough at its Markdown screen; a dropped .txt file asks Note or File
+// 2026-11-03): a dropped file is a card, with no preview note under it. A dropped .md or .txt
+// file asks Note or File
 // (checks 22 to 26). Before, every text, CSV or JSON file got a preview child.
 
 async function idle(page) {
@@ -159,12 +159,105 @@ export async function checkFileDropPreviews(page) {
     await track();
     assert.deepEqual([kept.pills, kept.children.length], [[['.TXT', 'kept.txt']], 0], 'txt, File: a card alone');
 
-    // A .md file alone opens the import walkthrough at its Markdown screen.
+    // A .md file alone asks Note or File as a .txt does, no longer opening Import (the
+    // maintainer, 2026-11-19); Note: a note at the top, tagged @markdown, shown as Markdown.
     await drop(page, '#notes-container', [{name: 'readme.md', type: 'text/markdown', text: '# Hello\n\n- one\n- two'}], 'center');
-    await page.waitForSelector('#import-wizard [data-choice-key="markdownAs"]', {visible: true, timeout: 10000});
-    await page.keyboard.press('Escape');
-    await page.waitForFunction(() => document.getElementById('import-wizard').style.display !== 'block', {timeout: 10000});
+    assert.deepEqual(await textDropChoice(page), {title: 'Text file', files: 'readme.md', focused: 'text-drop-choice-note'},
+      'md with no note open: it asks Note or File');
+    assert.equal(await page.evaluate(() => [...document.querySelectorAll('#import-wizard')].some(wizard => wizard.style.display === 'block')), false,
+      'md with no note open: Import does not open');
+    await page.click('#text-drop-choice-note');
+    await settle(page);
+    const topTags = await page.$eval('.note.editing .note-tag-bar-input', input => input.value);
+    assert.ok(/(^|\s)@markdown(\s|$)/.test(topTags), `md with no note open, Note: tagged @markdown (tags: ${topTags})`);
+    await leaveEditing(page);
+    assert.equal(await page.$eval('#notes-container > .note > .note-content', content => content.querySelector('h1') !== null), true,
+      'md with no note open, Note: a note at the top shown as Markdown');
+    await track();
+
+    // A .md file dropped into an empty note being edited, made a note: its text goes in and the
+    // note is tagged @markdown, so it shows as Markdown (the maintainer, 2026-11-18).
+    const emptyId = await page.evaluate(async () => {
+      const {NotesAPI} = await import('/static/js/modules/api-client.js');
+      return (await NotesAPI.createNote(null, '')).id;
+    });
+    createdIds.push(emptyId);
+    await page.reload();
+    await page.waitForSelector('[data-app-ready="true"]');
     await idle(page);
+    const emptySelector = `.note[data-note-id="${emptyId}"] .note-content`;
+    await page.$eval(emptySelector, content => content.scrollIntoView({block: 'center'}));
+    await page.click(emptySelector);
+    await page.waitForFunction(selector => document.querySelector(selector).getAttribute('contenteditable') === 'true',
+      {timeout: 5000}, emptySelector);
+    await settle(page);
+    await drop(page, emptySelector, [{name: 'readme.md', type: 'text/markdown', text: '# Hello\n\n- one\n- two'}], 'center');
+    await textDropChoice(page);
+    await page.click('#text-drop-choice-note');
+    await settle(page);
+    const droppedTags = await page.$eval('.note.editing .note-tag-bar-input', input => input.value);
+    assert.ok(/(^|\s)@markdown(\s|$)/.test(droppedTags), `md into an empty note, Note: tagged @markdown (tags: ${droppedTags})`);
+    await leaveEditing(page);
+    const dropped = await page.evaluate(id => {
+      const content = document.querySelector(`.note[data-note-id="${id}"] .note-content`);
+      return {isHeading: content.querySelector('h1') !== null, text: content.textContent};
+    }, emptyId);
+    assert.ok(dropped.isHeading, `md into an empty note, Note: shown as Markdown (${dropped.text})`);
+
+    // While a note is being edited every dropped file goes into it, wherever it is let go (the
+    // maintainer, 2026-11-19): a .md let go on the parent of the empty child being edited once
+    // went through Import to the top level.
+    const parentId = await page.evaluate(async () => {
+      const {NotesAPI} = await import('/static/js/modules/api-client.js');
+      return (await NotesAPI.createNote(null, '')).id;
+    });
+    createdIds.push(parentId);
+    const childId = await page.evaluate(async id => {
+      const {NotesAPI} = await import('/static/js/modules/api-client.js');
+      return (await NotesAPI.createChild(id, '')).id;
+    }, parentId);
+    await page.reload();
+    await page.waitForSelector('[data-app-ready="true"]');
+    await idle(page);
+    const parentSelector = `.note[data-note-id="${parentId}"] > .note-content`;
+    const childSelector = `.note[data-note-id="${childId}"] > .note-content`;
+    await page.$eval(childSelector, content => content.scrollIntoView({block: 'center'}));
+    await page.click(childSelector);
+    await page.waitForFunction(selector => document.querySelector(selector).getAttribute('contenteditable') === 'true',
+      {timeout: 5000}, childSelector);
+    await settle(page);
+    const rootsBefore = (await noteTexts(page)).length;
+    await drop(page, parentSelector, [{name: 'outside.md', type: 'text/markdown', text: '# Outside\n\n- one'}], 'center');
+    await textDropChoice(page);
+    assert.equal(await page.evaluate(() => [...document.querySelectorAll('#import-wizard')].some(wizard => wizard.style.display === 'block')), false,
+      'md on the parent of the note being edited: the Note or File question, not Import');
+    await page.click('#text-drop-choice-note');
+    await settle(page);
+    const childState = () => page.evaluate(selector => {
+      const content = document.querySelector(selector);
+      return {isEditing: content.getAttribute('contenteditable') === 'true', text: content.innerText,
+        tags: content.closest('.note').querySelector('.note-tag-bar-input').value};
+    }, childSelector);
+    let child = await childState();
+    assert.ok(child.isEditing && child.text.includes('# Outside'), `md on the parent: its text is in the child being edited (${JSON.stringify(child)})`);
+    assert.ok(/(^|\s)@markdown(\s|$)/.test(child.tags), `md on the parent: the child is tagged @markdown (${child.tags})`);
+    assert.equal((await noteTexts(page)).length, rootsBefore, 'md on the parent: no new note at the top');
+    // On another note, and on the gap between notes: into the note being edited, the caret where it was.
+    for (const [where, selector, name] of [
+      ['another note', `.note[data-note-id="${csvNote.id}"] .note-content`, 'on-another.csv'],
+      ['the notes column', '#notes-container', 'on-the-gap.csv'],
+    ]) {
+      await drop(page, selector, [{name, type: 'text/csv', text: 'x,y\n1,2'}], 'end');
+      await settle(page);
+      child = await childState();
+      assert.ok(child.isEditing, `a file on ${where}: the note is still being edited`);
+      assert.equal([...child.text.matchAll(new RegExp(FILE_TOKEN_RE, 'g'))].length, where === 'another note' ? 1 : 2,
+        `a file on ${where}: its card is in the note being edited (${child.text})`);
+      assert.equal((await noteTexts(page)).length, rootsBefore, `a file on ${where}: no new note at the top`);
+    }
+    await leaveEditing(page);
+    assert.deepEqual(byFirstPill(await filesView(page), 'data.csv').pills, [['.CSV', 'data.csv']],
+      'a file on another note: that note is unchanged');
 
     // Dropped into the note being edited: the card goes into it, editing continues, and the
     // note does not move; no preview note.

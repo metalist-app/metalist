@@ -33,6 +33,7 @@ from app.services.reference_suggestions import build_catalog_in_background
 from app.services.tab_state import tab_state_store
 from app.services.disk_space import full_disk_is_rejected, require_room_for_files
 from app.upload_limits import MAX_IN_MEMORY_FILE_BYTES
+from app.usecases.import_again import changed_since_day, is_changed_since, nothing_changed_since
 from app.usecases.import_bookmarks import CmdImportBookmarks, CmdPreviewBookmarkImport
 from app.usecases.import_obsidian_vault import (
     CmdEstimateImportImages,
@@ -48,6 +49,8 @@ router = APIRouter(prefix="/import", tags=["import"])
 
 # A folder path as the operating system's folder dialog gives it.
 _MAX_FOLDER_PATH_LENGTH = 4096
+# "Changed since", as a date field gives it: 2026-11-01.
+_MAX_DAY_LENGTH = len("2026-11-01")
 # obsidian_import.sources' IMPORT_SOURCES.
 ImportSourceKey = Literal["obsidian", "markdown", "files"]
 # obsidian_import.file_groups' FILE_GROUP_KINDS: the checklist's rows a folder of files leaves out.
@@ -85,11 +88,18 @@ class ImportFolderRequest(TypedDict):
     # IMAGE_LONGEST_SIDES; folder-import-and-file-previews.md, Images compressed).
     compressesImages: bool
     imageLongestSide: int
+    # Importing again (import_again.py): the folder's name as the walkthrough shows it, the day
+    # files must have changed since ('' for any; '2026-11-01'), and what happens to the notes
+    # of files that came in before (EARLIER_NOTES_CHOICES).
+    folderName: Annotated[str, Field(max_length=_MAX_FOLDER_PATH_LENGTH)]
+    changedSince: Annotated[str, Field(max_length=_MAX_DAY_LENGTH)]
+    earlierNotes: Literal["keep", "replace", "replace-edited"]
 
 
 @with_config(ConfigDict(strict=True))
 class ScanImportFolderRequest(TypedDict):
     folderPath: Annotated[str, Field(min_length=1, max_length=_MAX_FOLDER_PATH_LENGTH)]
+    changedSince: Annotated[str, Field(max_length=_MAX_DAY_LENGTH)]
 
 
 @with_config(ConfigDict(strict=True))
@@ -156,7 +166,15 @@ def scan_import_folder(request: Request, body: ScanImportFolderRequest) -> dict[
     folder = Path(body["folderPath"])
     if not folder.is_absolute() or not folder.is_dir():
         raise InputRejected(f"There is no folder at {folder}. Choose the folder again.")
-    return _checklist(folder_files(import_uploads.open_import_folder(folder)))
+    import_folder = import_uploads.open_import_folder(folder)
+    since = changed_since_day(body["changedSince"])
+    found = [
+        folder_file for folder_file in folder_files(import_folder)
+        if is_changed_since(import_folder.file_times(folder_file.path)[1], since)
+    ]
+    if since is not None and not found:
+        raise nothing_changed_since(since)
+    return _checklist(found)
 
 
 @router.post("/scan-listing")
@@ -182,7 +200,8 @@ def start_import_upload(request: Request) -> dict[str, object]:
 @transactional_route
 async def upload_import_file(request: Request, upload_id: str) -> dict[str, object]:
     """One ticked file of a dropped folder, at its path in the folder, written as it arrives.
-    The form's `path` comes before its file."""
+    The form's `path` and `modified` (when the file was last changed, the browser's
+    milliseconds) come before its file."""
     require_request_auth_token(request)
     declared_bytes = declared_body_bytes(request)
     if declared_bytes is not None:
@@ -191,7 +210,9 @@ async def upload_import_file(request: Request, upload_id: str) -> dict[str, obje
     def open_at_its_path(_part: FilePart, fields: Mapping[str, str]) -> import_uploads.IncomingFile:
         if "path" not in fields or not 0 < len(fields["path"]) <= _MAX_FOLDER_PATH_LENGTH:
             raise InputRejected("That file came without its path in the folder.")
-        return incoming.open(fields["path"])
+        if "modified" not in fields:
+            raise InputRejected("That file came without the date it was last changed.")
+        return incoming.open(fields["path"], import_uploads.modified_moment(fields["modified"]))
 
     with full_disk_is_rejected(), import_uploads.receive_file(upload_id) as incoming:
         _file_part, fields = await receive_upload(request, open_sink=open_at_its_path)
@@ -232,11 +253,13 @@ def preview_import(request: Request, body: ImportFolderRequest) -> dict[str, obj
         return CmdPreviewFolderOfFiles(
             folder_path=body["folderPath"], selection=_file_selection(body), split_mode=body["splitMode"],
             content_format=body["contentFormat"], folder_prefix=body["prefixFolder"], imported_at=datetime.now(timezone.utc),
+            folder_name=body["folderName"], changed_since=body["changedSince"], earlier_notes=body["earlierNotes"],
         ).execute()
     _require_no_excluded_groups(body)
     return CmdPreviewImport(
         source=body["source"], folder_path=body["folderPath"], split_mode=body["splitMode"],
         content_format=body["contentFormat"], folder_prefix=body["prefixFolder"], imported_at=datetime.now(timezone.utc),
+        folder_name=body["folderName"], changed_since=body["changedSince"], earlier_notes=body["earlierNotes"],
     ).execute()
 
 
@@ -251,6 +274,7 @@ def estimate_import_images(request: Request, body: ImportFolderRequest) -> dict[
     return CmdEstimateImportImages(
         source=body["source"], folder_path=body["folderPath"], selection=_file_selection(body), split_mode=body["splitMode"],
         content_format=body["contentFormat"], folder_prefix=body["prefixFolder"], imported_at=datetime.now(timezone.utc),
+        changed_since=body["changedSince"],
     ).execute()
 
 
@@ -297,6 +321,7 @@ def import_folder(request: Request, body: ImportFolderRequest) -> dict[str, obje
             folder_path=body["folderPath"], selection=_file_selection(body), split_mode=body["splitMode"],
             content_format=body["contentFormat"], folder_prefix=body["prefixFolder"], add_to_existing=body["addToExisting"],
             images=_image_choice(body), token=token, imported_at=datetime.now(timezone.utc),
+            folder_name=body["folderName"], changed_since=body["changedSince"], earlier_notes=body["earlierNotes"],
         ).execute()
     else:
         _require_no_excluded_groups(body)
@@ -304,6 +329,7 @@ def import_folder(request: Request, body: ImportFolderRequest) -> dict[str, obje
             source=body["source"], folder_path=body["folderPath"], split_mode=body["splitMode"],
             content_format=body["contentFormat"], folder_prefix=body["prefixFolder"], add_to_existing=body["addToExisting"],
             images=_image_choice(body), token=token, imported_at=datetime.now(timezone.utc),
+            folder_name=body["folderName"], changed_since=body["changedSince"], earlier_notes=body["earlierNotes"],
         ).execute()
     # The imported notes join the `[[` catalog now, not at the first `[[`.
     build_catalog_in_background()

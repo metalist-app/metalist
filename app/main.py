@@ -92,7 +92,7 @@ from app.api.routes.test import router as api2_test_router  # shockharness: igno
 from app.api.transactions import one_step_read_route, transactional_route
 from app.config import API_PREFIX, TEST_MODE, V1_API_PREFIX
 from app.services.agent.scripted_inference import scripted_ai_script_path
-from app.services.native_folder_picker import answered_folder_pick
+from app.services.native_folder_picker import answered_file_pick, answered_folder_pick
 from .models.database import SafeSession
 from loguru import logger
 import io
@@ -167,10 +167,11 @@ def _resolve_diagnostics_namespace(*, namespace: str | None) -> str:
     return namespace
 
 
-# A scripted AI (scripted_inference.py) and a folder dialog answered for a test
+# A scripted AI (scripted_inference.py) and a folder or file dialog answered for a test
 # (native_folder_picker.py) are refused outside a test server before anything starts.
 scripted_ai_script_path(environ=os.environ)
 answered_folder_pick(environ=os.environ)
+answered_file_pick(environ=os.environ)
 
 # Link titles and icons no note links to go, each time the notes have been loaded.
 auth_cache_state.after_page_ready(start_link_row_pruning)

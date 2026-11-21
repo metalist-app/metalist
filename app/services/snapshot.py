@@ -1095,6 +1095,7 @@ def _render_note_view_html_below_sites(
             context=context,
             static_export=False,
             credentials=CredentialDisplay.DOTS,
+            is_embedded=False,
         )
     else:
         rendered_content = render_note_content_with_embeds(

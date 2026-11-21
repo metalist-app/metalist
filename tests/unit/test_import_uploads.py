@@ -5,6 +5,7 @@ browser's list of its files before anything is sent, and only the ticked files a
 from __future__ import annotations
 
 import os
+from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 import subprocess
 import sys
@@ -24,9 +25,38 @@ def data_directory(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     return tmp_path / "data"
 
 
+# When the files of these tests were last changed on the computer they were dropped from.
+CHANGED_AT = datetime(2026, 10, 15, 9, 0, tzinfo=timezone.utc)
+CHANGED_AT_MS = "1792054800000"
+
+
 def _store(upload_id: str, path: str, content: bytes) -> None:
     with import_uploads.receive_file(upload_id) as incoming:
-        incoming.open(path).write(content)
+        incoming.open(path, CHANGED_AT).write(content)
+
+
+# A dropped file took the time it was uploaded as both its dates (found 2026-11-20): its notes
+# were dated the day of the import, and "Changed since" could not tell old files from new.
+def test_a_dropped_file_keeps_the_date_it_was_last_changed() -> None:
+    upload_id, folder_path = import_uploads.start_upload()
+    _store(upload_id, "notes/plan.md", b"# Plan\n")
+
+    held = import_uploads.open_import_folder(Path(folder_path))
+
+    assert held.file_times(PurePosixPath("notes/plan.md")) == (CHANGED_AT, CHANGED_AT)
+
+
+def test_the_browsers_milliseconds_are_read_as_a_moment() -> None:
+    assert CHANGED_AT.timestamp() * 1000 == int(CHANGED_AT_MS)
+    assert import_uploads.modified_moment(CHANGED_AT_MS) == CHANGED_AT
+    # A file dated before 1970.
+    assert import_uploads.modified_moment("-86400000") == datetime(1969, 12, 31, tzinfo=timezone.utc)
+
+
+@pytest.mark.parametrize("sent", ["", "yesterday", "17920548e5", "1792054800000.5", "9" * 20, "-" + "9" * 20])
+def test_a_date_that_is_no_number_of_milliseconds_is_refused(sent: str) -> None:
+    with pytest.raises(InputRejected):
+        import_uploads.modified_moment(sent)
 
 
 def test_the_checklist_from_a_list_of_files_is_the_one_a_folder_on_disk_gives(tmp_path: Path) -> None:
@@ -125,7 +155,7 @@ def test_a_path_sent_twice_at_once_is_refused_when_it_finishes(data_directory: P
 
     with pytest.raises(InputRejected, match="already"):
         with import_uploads.receive_file(upload_id) as first:
-            first.open("a.md").write(b"one")
+            first.open("a.md", CHANGED_AT).write(b"one")
             _store(upload_id, "a.md", b"two")
 
 
@@ -169,10 +199,15 @@ assert sorted(group["key"] for group in listed.json()["groups"]) == ["hidden", "
 assert client.post(API_PREFIX + "/import/scan-listing", headers=headers, json={"files": [{"path": "../x.md", "size": 1}]}).status_code == 400
 started = client.post(API_PREFIX + "/import/uploads", headers=headers).json()
 sent = client.post(API_PREFIX + "/import/uploads/" + started["uploadId"] + "/file", headers=headers,
-                   data={"path": "notes/plan.md"}, files={"file": ("plan.md", b"# Plan\\n", "text/markdown")})
+                   data={"path": "notes/plan.md", "modified": "1792054800000"}, files={"file": ("plan.md", b"# Plan\\n", "text/markdown")})
 assert sent.status_code == 200, sent.text
+undated = client.post(API_PREFIX + "/import/uploads/" + started["uploadId"] + "/file", headers=headers,
+                      data={"path": "notes/other.md"}, files={"file": ("other.md", b"x", "text/markdown")})
+assert undated.status_code == 400, undated.text
+old = client.post(API_PREFIX + "/import/scan", headers=headers, json={"folderPath": started["folderPath"], "changedSince": "2026-11-01"})
+assert old.status_code == 400 and "No file in the folder changed since" in old.text, old.text
 assert not (Path(started["folderPath"]) / "notes" / "plan.md").exists()
-scanned = client.post(API_PREFIX + "/import/scan", headers=headers, json={"folderPath": started["folderPath"]})
+scanned = client.post(API_PREFIX + "/import/scan", headers=headers, json={"folderPath": started["folderPath"], "changedSince": ""})
 assert [group["key"] for group in scanned.json()["groups"]] == ["text"], scanned.json()
 assert client.post(API_PREFIX + "/import/uploads/" + started["uploadId"] + "/discard", headers=headers).status_code == 200
 assert not Path(started["folderPath"]).exists()
@@ -187,7 +222,7 @@ def test_a_file_that_does_not_arrive_whole_leaves_nothing(data_directory: Path) 
 
     with pytest.raises(OSError, match="connection lost"):
         with import_uploads.receive_file(upload_id) as incoming:
-            incoming.open("notes/plan.md").write(b"part of it")
+            incoming.open("notes/plan.md", CHANGED_AT).write(b"part of it")
             raise OSError("connection lost")
 
     assert [path for path in Path(folder_path).rglob("*") if path.is_file()] == []

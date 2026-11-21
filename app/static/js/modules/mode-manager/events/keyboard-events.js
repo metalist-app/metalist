@@ -112,6 +112,8 @@ import {
     playReferenceViewTransition,
 } from '../services/reference-view-transition-service.js';
 import { shouldFocusSearchInputForViewModeTab } from '../services/view-mode-search-shortcut-service.js';
+import { searchContextForDigitKey } from '../services/search-context-digit-service.js';
+import { isContextMenuOpen } from '../../context-menu/context-menu-service.js';
 import {
     getTagBarValue,
     normalizeTagBarForNewTag,
@@ -156,6 +158,7 @@ import { CommandPalette } from '../../command-palette/command-palette-controller
 import { hasWebPageName, isBookmarksExportFile } from '../../wizard/bookmarks-file.js';
 import { IMPORT_BOOKMARKS, promptForBookmarksDropChoice } from '../services/bookmarks-drop-choice-modal-service.js';
 import { AS_FILE, promptForTextDropChoice } from '../services/text-drop-choice-modal-service.js';
+import { tagsAfterTextDrop } from '../services/dropped-markdown-tag.js';
 import { CommandGate } from '../services/command-gate-service.js';
 import { unlessDiagramEditorOpen } from '../../excalidraw/excalidraw-editor-state.js';
 import { unlessNoteFullscreenOpen } from '../services/note-fullscreen-service.js';
@@ -204,7 +207,6 @@ const FOLDER_ON_ITS_OWN_TEXT = 'Drop a folder on its own.';
 // Dropped text files ask Note or File; Markdown ones open the import walkthrough
 // (docs/ready-to-build/files-shown-not-copied.md §5).
 const DROPPED_TEXT_FILE_RE = /\.(md|markdown|txt)$/i;
-const DROPPED_MARKDOWN_FILE_RE = /\.(md|markdown)$/i;
 // Between dropped text files' text put into one note.
 const TEXT_FILES_SEPARATOR = '\n\n';
 // How often a text file's question looks whether the drop's other files are in.
@@ -575,6 +577,10 @@ function handleKeyDown(event) {
         }
     }
     
+    if (!ModeContext.isEditing && handleSearchContextDigit(event)) {
+        return;
+    }
+
 	    const isMoveKey = MOVE_KEYS.has(event.key);
     const isSelectedDeleteShortcut = shouldDeleteSelectedNoteFromKeyboard({
         key: event.key,
@@ -2219,6 +2225,9 @@ async function attachFilesAsReferenceTokens(files, options) {
     return insertedAnything;
 }
 
+// While a note is being edited, every dropped file goes into it, wherever on the page it is let
+// go: another note, the gap between notes, the folder tree (the maintainer, 2026-11-19; a .md let
+// go a few pixels outside a child note, on its parent, went through Import to the top level).
 function resolveEditingDropTarget(event) {
     if (!event) {
         throw new Error('resolveEditingDropTarget expects event');
@@ -2226,22 +2235,12 @@ function resolveEditingDropTarget(event) {
     if (!ModeContext.isEditing || !ModeContext.currentNoteId) {
         return null;
     }
-
-    const rawTarget = event.target;
-    if (!(rawTarget instanceof Element)) {
-        return null;
-    }
-
-    // Anywhere on the note being edited counts, its margin too.
-    const noteElement = rawTarget.closest('.note');
+    const noteElement = document.querySelector(`.note[data-note-id="${ModeContext.currentNoteId}"]`);
     if (!(noteElement instanceof HTMLElement)) {
         return null;
     }
-    const noteId = noteElement.dataset.noteId;
-    if (!noteId || noteId !== ModeContext.currentNoteId) {
-        return null;
-    }
-    const noteContent = noteElement.querySelector('.note-content');
+    const noteContent = [...noteElement.querySelectorAll('.note-content')]
+        .find((content) => content.closest('.note') === noteElement);
     if (!(noteContent instanceof HTMLElement) || noteContent.getAttribute('contenteditable') !== 'true') {
         return null;
     }
@@ -2281,12 +2280,29 @@ function focusDropTargetForInsertion(target, event) {
         throw new Error('focusDropTargetForInsertion requires HTMLElement target');
     }
 
+    // Let go outside the note's text: the caret stays where it was in the note; with none there,
+    // the end.
+    const caretBefore = caretRangeInside(target);
     target.focus();
     const positioned = placeCaretAtDropPoint(target, event);
     if (!positioned) {
-        placeCaretAtEnd(target);
+        if (caretBefore === null) {
+            placeCaretAtEnd(target);
+        } else {
+            const selection = window.getSelection();
+            selection.removeAllRanges();
+            selection.addRange(caretBefore);
+        }
     }
     captureSelectionSnapshot();
+}
+
+function caretRangeInside(element) {
+    const selection = window.getSelection();
+    if (!selection || selection.rangeCount === 0) return null;
+    const range = selection.getRangeAt(0);
+    if (!element.contains(range.startContainer) || !element.contains(range.endContainer)) return null;
+    return range.cloneRange();
 }
 
 function focusCurrentEditableAtEnd() {
@@ -2675,16 +2691,20 @@ function handleDropEvent(event) {
     // is uploaded. With anything else it is refused; alone it is to go through the import
     // walkthrough (docs/ready-to-build/desktop-drops-into-folders.md).
     // On a virtual folder (or the tree's top), what is dropped goes into it.
-    const intoFolder = virtualFolderAt(event.target);
+    const folderUnderDrop = virtualFolderAt(event.target);
     const dropped = describeDroppedItems(event.dataTransfer);
     if (dropped.folderCount > 0) {
         if (dropped.itemCount !== LONE_FILE) {
             ErrorHandler.showInfoBanner(FOLDER_ON_ITS_OWN_TEXT, DROPPED_FOLDER_BANNER_SECONDS * MS_PER_SECOND);
             return;
         }
-        void openDroppedFolder(loneDroppedFolderEntry(event.dataTransfer), importFolderOf(intoFolder));
+        void openDroppedFolder(loneDroppedFolderEntry(event.dataTransfer), importFolderOf(folderUnderDrop));
         return;
     }
+    // Files, while a note is being edited, go into that note, also when let go on the folder tree
+    // (a dropped folder cannot go inside a note, so it went its own way above).
+    let intoFolder = folderUnderDrop;
+    if (resolveEditingDropTarget(event) !== null) intoFolder = null;
 
     const droppedFiles = getFilesFromTransfer(event.dataTransfer);
     if (droppedFiles.length === 0) {
@@ -2705,8 +2725,7 @@ function handleDropEvent(event) {
         });
         return;
     }
-    // Dropped text files ask first: a note or a file; with a Markdown file among them, the
-    // import walkthrough at its Markdown screen (docs/ready-to-build/files-shown-not-copied.md §5).
+    // Dropped text files ask first: a note or a file (docs/ready-to-build/files-shown-not-copied.md §5).
     if (droppedFiles.some(isDroppedTextFile)) {
         void dropWithTextFiles(event, droppedFiles, intoFolder).catch((error) => {
             rethrowUnexpectedError(error);
@@ -2744,8 +2763,8 @@ function isDroppedTextFile(file) {
 
 // Dropped text files (files-shown-not-copied.md §5, checks 22 to 26). Into a note being edited:
 // one question, then the text (or the cards) at the drop point, then the other files. Elsewhere
-// the other files come in at once, then the text files ask Note or File, or, with a Markdown
-// file among them, all of them go through the walkthrough's Markdown screen.
+// the other files come in at once, then the text files ask Note or File, a Markdown file as any
+// other (the maintainer, 2026-11-19; it went straight to the walkthrough's Markdown screen).
 async function dropWithTextFiles(event, droppedFiles, intoFolder) {
     const textFiles = droppedFiles.filter(isDroppedTextFile);
     const otherFiles = droppedFiles.filter((file) => !isDroppedTextFile(file));
@@ -2765,10 +2784,6 @@ async function dropWithTextFiles(event, droppedFiles, intoFolder) {
     if (otherFiles.length > 0) {
         dropFilesThere(event, otherFiles, intoFolder);
         await untilNothingElseAsks();
-    }
-    if (textFiles.some((file) => DROPPED_MARKDOWN_FILE_RE.test(file.name))) {
-        await CommandPalette.openImportWizardWithDroppedFiles(textFiles, importFolderOf(intoFolder));
-        return;
     }
     const choice = await promptForTextDropChoice(textFiles.map((file) => file.name));
     if (choice === null) return;
@@ -2796,6 +2811,15 @@ async function insertTextFilesWhereDropped(event, textFiles) {
             throw new Error('The note a text file was dropped into is no longer being edited');
         }
         focusDropTargetForInsertion(target, event);
+        // A Markdown file into an empty note: the note is tagged @markdown, so it shows as
+        // Markdown (dropped-markdown-tag.js).
+        const noteElement = DOMUtils.getNoteById(ModeContext.currentNoteId);
+        const tagsBefore = getTagBarValue(noteElement);
+        const tagsAfter = tagsAfterTextDrop({
+            tags: tagsBefore, fileNames: textFiles.map((file) => file.name),
+            noteIsEmpty: isCurrentEditingNoteEmptyForPasswordAutoTag(),
+        });
+        if (tagsAfter !== tagsBefore) setTagBarValue(noteElement, tagsAfter);
         insertPlainTextAtCurrentSelection(texts.join(TEXT_FILES_SEPARATOR));
         await actionSaveNote(ModeContext.currentNoteId);
     }, {
@@ -2814,11 +2838,17 @@ async function makeNotesOfTextFiles(textFiles, intoFolder) {
         if (blockRootNoteCreation('top', 'dropTextFilesAsNotes')) {
             return;
         }
+        const named = textFiles.map((file, index) => ({ name: file.name, text: texts[index] }));
         // Each goes to the top: the last made first.
-        for (const text of [...texts].reverse()) {
+        for (const { name, text } of named.reverse()) {
             requireCreatedNoteId(await createNoteAtTop(), 'dropTextFileNote');
-            insertPlainTextAtCurrentSelection(text);
             const noteId = ModeContext.currentNoteId;
+            // A Markdown file's note is tagged @markdown, so it shows as Markdown.
+            const noteElement = DOMUtils.getNoteById(noteId);
+            const tagsBefore = getTagBarValue(noteElement);
+            const tagsAfter = tagsAfterTextDrop({ tags: tagsBefore, fileNames: [name], noteIsEmpty: true });
+            if (tagsAfter !== tagsBefore) setTagBarValue(noteElement, tagsAfter);
+            insertPlainTextAtCurrentSelection(text);
             await actionSaveNote(noteId);
             if (intoFolder !== null || texts.length > LONE_FILE) {
                 await actionSaveAndExitEditingWithoutRefreshing();
@@ -3613,12 +3643,62 @@ function buildTabFolderIconHtml(tabId) {
     return '<span class="virtual-folder-icon tab-context-folder-icon" aria-hidden="true"></span>';
 }
 
+// The search contexts as the list numbers them. A reference page is not a search context
+// (reference-cards.md): its hidden tab is not listed.
+function listedSearchContextTabIds() {
+    return ModeContext.tabOrder.filter((tabId) => getReferenceNavigationLabelForTab(tabId) === '');
+}
+
+// The search context in use: with a reference page shown, the search it came from.
+function shownSearchContextTabId() {
+    return isViewingReferenceSource() ? getActiveReferenceOriginScope().scopeTabId : ModeContext.activeTabId;
+}
+
+// A search context chosen in the list, by a click or by its number key.
+async function chooseSearchContext(tabId) {
+    const searchQuery = ModeContext.getExecutedSearchQuery(tabId);
+    if (typeof searchQuery !== 'string') {
+        throw new Error('A chosen search context\'s executed search must be a string');
+    }
+    const activityPromise = NotesAPI.recordTabSearchSelection(searchQuery);
+    hideSearchContextsOverlay();
+    // A context on a reference page goes back to that page, as it was left (2026-11-14).
+    let shownTabId = getReferencePageTabForContext(tabId);
+    if (shownTabId === '') {
+        shownTabId = tabId;
+    }
+    // Picking the search context already shown changes nothing: its Untagged view
+    // stays until View → All Notes or its chip's × ends it (docs/ui/state-handling.md).
+    void CommandGate.run('tab.select', async () => {
+        if (shownTabId !== ModeContext.activeTabId) {
+            await switchToTabContext(shownTabId, {});
+        }
+    });
+    if (activityPromise !== null) await activityPromise;
+}
+
+// 1 to 9 choose the search context of that number while nothing is typed (the maintainer,
+// 2026-11-21); true when the key did. The caller has ruled out fields, dialogs and editing.
+function handleSearchContextDigit(event) {
+    const tabId = searchContextForDigitKey({
+        key: event.key,
+        hasModifier: event.metaKey || event.ctrlKey || event.altKey || event.shiftKey,  // shockharness: ignore[DEF003] reason="a boolean OR of conditions, not a fallback"
+        isMenuOpen: isContextMenuOpen(),
+        listedTabIds: listedSearchContextTabIds(),
+        shownTabId: shownSearchContextTabId(),
+    });
+    if (tabId === '') return false;
+    event.preventDefault();
+    event.stopPropagation();
+    void chooseSearchContext(tabId);
+    return true;
+}
+
 export function updateSearchContextsList() {
     const searchContextsList = document.getElementById('search-contexts-list');
     updateReferenceSourceIndicator();
     if (!searchContextsList) return;
     const tabs = ModeContext.tabs;
-    const activeTabId = ModeContext.activeTabId;
     const tabOrder = ModeContext.tabOrder;
 
     if (!CONFIG.TABS || typeof CONFIG.TABS.MAX_TABS !== 'number' || CONFIG.TABS.MAX_TABS <= 0) {
@@ -3632,8 +3712,8 @@ export function updateSearchContextsList() {
     }
     // A reference page is not a search context (reference-cards.md): its hidden tab is not listed,
     // and with a page shown, the search it came from is the one in use.
-    const listedTabIds = tabOrder.filter((tabId) => getReferenceNavigationLabelForTab(tabId) === '');
-    const listedActiveTabId = isViewingReferenceSource() ? getActiveReferenceOriginScope().scopeTabId : activeTabId;
+    const listedTabIds = listedSearchContextTabIds();
+    const listedActiveTabId = shownSearchContextTabId();
     for (let i = 0; i < listedTabIds.length; i++) {
         const tabId = listedTabIds[i];
         const tabEntry = tabs[tabId];
@@ -3690,25 +3770,7 @@ export function updateSearchContextsList() {
                 if (!tabId) {
                     return;
                 }
-                const searchQuery = ModeContext.getExecutedSearchQuery(tabId);
-                if (typeof searchQuery !== 'string') {
-                    throw new Error('Clicked tab executed search query must be a string');
-                }
-                const activityPromise = NotesAPI.recordTabSearchSelection(searchQuery);
-                hideSearchContextsOverlay();
-                // A context on a reference page goes back to that page, as it was left (2026-11-14).
-                let shownTabId = getReferencePageTabForContext(tabId);
-                if (shownTabId === '') {
-                    shownTabId = tabId;
-                }
-                // Picking the search context already shown changes nothing: its Untagged view
-                // stays until View → All Notes or its chip's × ends it (docs/ui/state-handling.md).
-                void CommandGate.run('tab.select', async () => {
-                    if (shownTabId !== ModeContext.activeTabId) {
-                        await switchToTabContext(shownTabId, {});
-                    }
-                });
-                if (activityPromise !== null) await activityPromise;
+                await chooseSearchContext(tabId);
             });
         });
         

@@ -312,6 +312,15 @@ async function phoneCase(page) {
   try {
     await page.waitForSelector('[data-app-ready="true"]');
     await idle(page);
+    // The phone layout needs a finger as the main pointer (phone-mode.js, 2026-11-18). Firefox
+    // cannot be made a phone (browser-smoke.mjs, the phone suite): there the page stays the
+    // desktop's, and this case has nothing to check. Said out loud, never passed quietly.
+    if (!(await page.evaluate(() => document.body.classList.contains('phone-layout')))) {
+      assert.equal(await page.evaluate(() => window.matchMedia('(pointer: coarse)').matches), false,
+        'a narrow screen with a finger as its pointer is the phone layout');
+      console.log('SKIPPED the phone case of floating messages: this browser cannot emulate a phone (no touch pointer)');
+      return;
+    }
     await show(page, 'Phone news', 'info', {duration: NEWS_MS});
     const header = await page.$eval('.controls', node => Math.round(node.getBoundingClientRect().bottom));
     const shown = await card(page, 'Phone news');

@@ -13,10 +13,13 @@
 
 // The arrows of notes in the list (and in full screen and floating windows) and of notes in embeds.
 const ARROW_SELECTOR = '.note > .note-collapse-toggle, .note-embed-body > .note-embed-collapse-toggle';
-// What a first line can be instead of text; the arrow stays at the note's top for these.
+// What a first line can be instead of text; the arrow stays at the note's top for these. A
+// gallery (@gallery, under the note's own text) is one whole: the pages its tiles show hold text,
+// and the arrow of a note lined up with a tile's first line, a line too low, whenever the note's
+// own first line was not text (the maintainer, 2026-11-19).
 const NOT_TEXT_SELECTOR = [
     'img', 'video', 'canvas', 'table', 'pre', '.meta-latex', '.meta-mermaid-diagram', 'pre.meta-mermaid-source',
-    '.note-file-image-embed', '.note-file-excalidraw-embed', 'math[display="block"]',
+    '.note-file-image-embed', '.note-file-excalidraw-embed', 'math[display="block"]', '.meta-gallery',
 ].join(', ');
 // The arrow's own line (main.css): its glyph sits on the baseline of a line this tall.
 const ARROW_LINE_HEIGHT_PX = 27;

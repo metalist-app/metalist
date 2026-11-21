@@ -24,7 +24,7 @@ async function installFakeServer(page) {
         const fake = {originalFetch: window.fetch, isRestored: false, unauthorized: 0};
         window.restoreSessionTest = fake;
         const answers = {
-            '/api2/backup/list': {backups: [backup]},
+            '/api2/backup/list': {backups: [backup], can_choose_file: false, current_namespace: 'default'},
             '/api2/backup/restore/preflight': {same_namespace: true, target_exists: true,
                 target_requires_password: false, target_is_active: true},
             '/api2/backup/restore': {backup_filename: backup.filename, target_namespace: backup.namespace,
@@ -60,7 +60,89 @@ async function restoreOpenVaultThroughDialog(page) {
     await page.waitForFunction(() => document.body.textContent.includes('Backup restored successfully'));
 }
 
+// Choose File… (the maintainer, 2026-11-19): a backup kept anywhere on this computer. The page
+// stands in for the server and its file dialog (tests/unit/test_restore_chosen_backup_file.py
+// covers the server): the list offers the button, and the dialog answers with `picked`.
+const CHOSEN_PATH = '/Users/example/Downloads/other-20261119-064000-123456.metalist-backup.tar.gz';
+const CHOSEN = Object.freeze({
+    backup_id: 'file::other::other-20261119-064000-123456.metalist-backup.tar.gz',
+    filename: 'other-20261119-064000-123456.metalist-backup.tar.gz', namespace: 'other',
+    created_at: '2026-11-19T14:40:00Z', size_bytes: 4096, source: 'file',
+});
+
+async function openRestoreWith(page, {canChooseFile, picked}) {
+    await page.evaluate(async ({backup, canChooseFile, picked}) => {
+        const originalFetch = window.fetch;
+        window.chooseFileTest = {originalFetch};
+        const reply = body => new Response(JSON.stringify(body), {status: 200, headers: {'Content-Type': 'application/json'}});
+        window.fetch = async (url, options) => {
+            const path = new URL(url, location.href).pathname;
+            if (path === '/api2/backup/list') return reply({backups: [backup], can_choose_file: canChooseFile, current_namespace: 'default'});
+            if (path === '/api2/backup/restore/file/pick') return reply(picked);
+            return originalFetch(url, options);
+        };
+        const {BackupRestoreModal} = await import('/static/js/modules/modals/backup-restore-modal.js');
+        await new BackupRestoreModal().open();
+    }, {backup: BACKUP, canChooseFile, picked});
+    await page.waitForSelector('#restore-backup-btn', {visible: true});
+}
+
+async function closeRestore(page) {
+    await page.click('#close-backup-modal-btn');
+    await page.waitForFunction(() => document.querySelector('#backup-restore-modal .modal-content') === null
+        || document.getElementById('backup-restore-modal').style.display === 'none');
+    await page.evaluate(() => { window.fetch = window.chooseFileTest.originalFetch; });
+    await waitForAppQuiet(page, SETTLE_MS);
+}
+
+function restoreList(page) {
+    return page.evaluate(() => ({
+        // Each row under its group's heading: the vault, or the chosen file.
+        rows: [...document.querySelectorAll('#backup-select .backup-restore-row')].map(row => ({
+            vault: (() => {
+                let heading = row.previousElementSibling;
+                while (!heading.classList.contains('backup-restore-group')) heading = heading.previousElementSibling;
+                return heading.textContent;
+            })(),
+            source: row.querySelector('.backup-restore-source').textContent,
+            tooltip: row.title, isChosen: row.querySelector('input').checked,
+        })),
+        target: document.getElementById('backup-target-namespace').value,
+        hasButton: document.getElementById('backup-restore-choose-file-btn') !== null,
+    }));
+}
+
+async function checkChooseFile(page) {
+    const listed = {vault: 'default', source: 'Kept by MetaList', tooltip: BACKUP.filename};
+
+    await openRestoreWith(page, {canChooseFile: false, picked: {selected: false, backups: [], file_path: ''}});
+    assert.equal((await restoreList(page)).hasButton, false, 'from another computer: no Choose File…');
+    await closeRestore(page);
+
+    await openRestoreWith(page, {canChooseFile: true, picked: {selected: false, backups: [], file_path: ''}});
+    await page.click('#backup-restore-choose-file-btn');
+    await waitForAppQuiet(page, SETTLE_MS);
+    assert.deepEqual(await restoreList(page), {rows: [{...listed, isChosen: true}], target: 'default', hasButton: true},
+        'the file dialog cancelled: the list stays as it was');
+    await closeRestore(page);
+
+    await openRestoreWith(page, {canChooseFile: true, picked: {selected: true, backups: [CHOSEN], file_path: CHOSEN_PATH}});
+    await page.click('#backup-restore-choose-file-btn');
+    await page.waitForFunction(() => document.querySelectorAll('#backup-select .backup-restore-row').length > 1);
+    assert.deepEqual(await restoreList(page), {
+        rows: [{vault: 'Chosen file: other', source: 'Chosen file', tooltip: CHOSEN_PATH, isChosen: true}, {...listed, isChosen: false}],
+        target: 'other', hasButton: true,
+    }, 'a chosen file: a row on top, chosen, saying where it is; its vault is the target');
+    await closeRestore(page);
+
+    await openRestoreWith(page, {canChooseFile: true, picked: {selected: false, backups: [], file_path: ''}});
+    assert.deepEqual((await restoreList(page)).rows, [{...listed, isChosen: true}], 'opened again: the chosen file is gone from the list');
+    await closeRestore(page);
+    console.log('PASS Choose File… puts a backup from anywhere on top of the restore list');
+}
+
 export async function checkRestoreSession(page) {
+    await checkChooseFile(page);
     const appUrl = page.url();
     await installFakeServer(page);
     await restoreOpenVaultThroughDialog(page);

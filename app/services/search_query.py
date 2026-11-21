@@ -265,6 +265,16 @@ def parse_search_query(normalized_text: str) -> ParsedSearchQuery:
     return ParsedSearchQuery(clauses=tuple(clauses))
 
 
+def tags_excluded_by_search(search: str) -> FrozenSet[str]:
+    """The tags (casefolded) a search leaves out whichever of its OR parts a note matches
+    (`ML3 -journal` gives `journal`): a note given one of them leaves the search's list."""
+    parsed = parse_search_query(search)
+    excluded = {tag.casefold() for tag in parsed.first_clause.forbidden_tags}
+    for clause in parsed.clauses:
+        excluded &= {tag.casefold() for tag in clause.forbidden_tags}
+    return frozenset(excluded)
+
+
 def search_highlight_phrases(parsed: ParsedSearchQuery) -> Tuple[str, ...]:
     """The quoted phrases a matching note contains, from every OR clause, each once and
     as the search reads them (an edge space limits a match to a word edge there): what

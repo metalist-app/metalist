@@ -1998,6 +1998,106 @@ body.ontology-modal-open #ontology-modal {
     }
 }
 
+/* Restore From Backup's list (backup-list-row.js): a row per backup, its vault, when it was made,
+   its size and where it is kept, each in its own column, under its vault's name; about eight
+   rows show, the rest scroll. */
+.backup-restore-list-label {
+    display: block;
+    margin-bottom: 6px;
+    font-weight: 600;
+}
+
+.backup-restore-list {
+    display: grid;
+    grid-template-columns: auto 1fr auto auto;
+    max-height: 272px;
+    overflow-y: auto;
+    border: 1px solid var(--modal-border);
+    border-radius: 8px;
+}
+
+.modal-content .backup-restore-list .backup-restore-row {
+    display: grid;
+    grid-column: 1 / -1;
+    grid-template-columns: subgrid;
+    align-items: center;
+    column-gap: 14px;
+    margin: 0;
+    padding: 7px 12px;
+    font-weight: normal;
+    cursor: var(--skin-cursor-pointer, pointer);
+    border-bottom: 1px solid var(--modal-border);
+}
+
+.modal-content .backup-restore-list .backup-restore-row:last-child {
+    border-bottom: 0;
+}
+
+.modal-content .backup-restore-list .backup-restore-row:hover {
+    background: var(--modal-quiet-button-hover);
+}
+
+.modal-content .backup-restore-list .backup-restore-row:has(input:checked) {
+    background: var(--modal-selected);
+}
+
+.modal-content .backup-restore-list .backup-restore-row input[type="radio"] {
+    width: 16px;
+    height: 16px;
+    margin: 0;
+    padding: 0;
+}
+
+.modal-content .form-group > .backup-restore-choose-file {
+    margin-top: 8px;
+}
+
+.backup-restore-empty-choices {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 16px;
+}
+
+/* A vault's name over its backups; it stays in sight while its backups scroll under it. */
+.backup-restore-group {
+    grid-column: 1 / -1;
+    position: sticky;
+    top: 0;
+    padding: 6px 12px;
+    font-weight: 600;
+    color: var(--modal-text);
+    background: var(--modal-surface-raised);
+    border-bottom: 1px solid var(--modal-border);
+}
+
+.backup-restore-size {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
+
+.backup-restore-size,
+.backup-restore-source {
+    color: var(--modal-text-muted);
+    white-space: nowrap;
+}
+
+.backup-restore-when {
+    white-space: nowrap;
+}
+
+/* Narrow, the date and the place wrap inside their columns so no row is cut off. */
+@media (max-width: 640px) {
+    .modal-content .backup-restore-list .backup-restore-row {
+        column-gap: 10px;
+    }
+
+    .backup-restore-when,
+    .backup-restore-source {
+        white-space: normal;
+    }
+}
+
 .backup-restore-modal-content {
     width: min(760px, 92vw);
 }
@@ -5185,13 +5285,13 @@ html[data-theme="dark"] .note-file-text-snippet {
 /* @gallery: the pictures of the note and every note under it, as a grid under its text
    (app/services/note_gallery.py; docs/future-plans/gallery.md). The children it draws from
    are hidden while it shows; a gallery with no picture draws nothing and hides nothing. */
-.note[data-note-tags*="@gallery"]:not(.editing):not(.is-gallery-outline):has(> .note-content .meta-gallery) > .note-children {
+.note[data-note-tags*="@gallery"]:not(.editing):not(.is-gallery-outline):has(> .note-content .meta-gallery:not(.note-embed-node .meta-gallery)) > .note-children {
     display: none;
 }
 
 /* Switched to an outline (gallery-view-service.js): its children, no grid. Folded, a gallery
    shows the same row of pictures either way, and no switch: the switch is for an open gallery. */
-.note.is-gallery-outline:not(.collapsed) > .note-content .meta-gallery > .meta-gallery-grid {
+.note.is-gallery-outline:not(.collapsed) > .note-content .meta-gallery:not(.note-embed-node .meta-gallery) > .meta-gallery-grid {
     display: none;
 }
 
@@ -5199,9 +5299,12 @@ html[data-theme="dark"] .note-file-text-snippet {
     display: none;
 }
 
-/* The switch, in the margin below the fold arrow: four squares for the grid, lines for the outline. */
+/* The switch, in the margin below the fold arrow. Its icon shows what the note is showing now,
+   as the fold arrow does (the maintainer, 2026-11-18; it showed what a click would switch to):
+   four squares while it shows the grid, lines while it shows the outline. */
 .meta-gallery-switch {
     position: absolute;
+    /* Under the fold arrow, where gallery-view-service.js keeps it; these are its place with no arrow. */
     top: 32px;
     left: -29px;
     width: 27px;
@@ -5211,36 +5314,44 @@ html[data-theme="dark"] .note-file-text-snippet {
     background: transparent;
     color: rgba(0, 0, 0, 0.35);
     cursor: var(--skin-cursor-pointer, pointer);
-    font-size: 17px;
     line-height: 27px;
     text-align: center;
 }
 
-/* The outline: a line with two lines indented under it, a parent and its children (unlike the
-   menu's three even lines). */
+.meta-gallery-switch:hover {
+    color: #000000;
+}
+
+/* Both icons are drawn in one 18px square, so they are the same size in the same place. The grid:
+   four squares. */
 .meta-gallery-switch::before {
     content: "";
     display: inline-block;
-    width: 15px;
-    height: 12px;
+    width: 18px;
+    height: 18px;
     vertical-align: middle;
     background:
-        linear-gradient(currentColor, currentColor) 0 0 / 100% 2px no-repeat,
-        linear-gradient(currentColor, currentColor) 5px 5px / 10px 2px no-repeat,
-        linear-gradient(currentColor, currentColor) 5px 10px / 10px 2px no-repeat;
+        linear-gradient(currentColor, currentColor) 0 0 / 8px 8px no-repeat,
+        linear-gradient(currentColor, currentColor) 10px 0 / 8px 8px no-repeat,
+        linear-gradient(currentColor, currentColor) 0 10px / 8px 8px no-repeat,
+        linear-gradient(currentColor, currentColor) 10px 10px / 8px 8px no-repeat;
 }
 
-.note.is-gallery-outline > .note-content .meta-gallery-switch::before {
-    content: "▦";
-    display: inline;
-    width: auto;
-    height: auto;
-    background: none;
-    vertical-align: baseline;
+/* The outline: a line with two lines indented under it, a parent and its children (unlike the
+   menu's three even lines). */
+.note.is-gallery-outline > .note-content .meta-gallery:not(.note-embed-node .meta-gallery) > .meta-gallery-switch::before {
+    background:
+        linear-gradient(currentColor, currentColor) 0 2px / 18px 2px no-repeat,
+        linear-gradient(currentColor, currentColor) 6px 8px / 12px 2px no-repeat,
+        linear-gradient(currentColor, currentColor) 6px 14px / 12px 2px no-repeat;
 }
 
 html[data-theme="dark"] .meta-gallery-switch {
     color: rgba(255, 255, 255, 0.4);
+}
+
+html[data-theme="dark"] .meta-gallery-switch:hover {
+    color: #ffffff;
 }
 
 /* Folded, one row of small pictures under the first line, without captions. */
@@ -5261,6 +5372,42 @@ html[data-theme="dark"] .meta-gallery-switch {
 }
 
 .note.collapsed:not(.editing) > .note-content .meta-gallery-caption {
+    display: none;
+}
+
+/* A gallery inside an embed is drawn as the list draws it (embedded_references.py,
+   note-embed-gallery; the maintainer, 2026-11-19: it showed its children as an outline, never
+   the grid): its children hidden while the grid shows, the same switch, and folded one row. */
+.note-embed-gallery:not(.is-gallery-outline) > .note-embed-body > .note-embed-children {
+    display: none;
+}
+
+.note-embed-gallery.is-gallery-outline:not(.note-embed-collapsed) > .note-embed-body > .note-embed-content > .meta-gallery > .meta-gallery-grid {
+    display: none;
+}
+
+.note-embed-collapsed > .note-embed-body > .note-embed-content > .meta-gallery > .meta-gallery-switch {
+    display: none;
+}
+
+.note-embed-gallery.is-gallery-outline > .note-embed-body > .note-embed-content > .meta-gallery > .meta-gallery-switch::before {
+    background:
+        linear-gradient(currentColor, currentColor) 0 2px / 18px 2px no-repeat,
+        linear-gradient(currentColor, currentColor) 6px 8px / 12px 2px no-repeat,
+        linear-gradient(currentColor, currentColor) 6px 14px / 12px 2px no-repeat;
+}
+
+.note-embed-collapsed > .note-embed-body > .note-embed-content > .meta-gallery > .meta-gallery-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(64px, 1fr));
+    grid-template-rows: auto;
+    grid-auto-rows: 0;
+    gap: 0 6px;
+    overflow: hidden;
+    margin-top: 6px;
+}
+
+.note-embed-collapsed > .note-embed-body > .note-embed-content > .meta-gallery .meta-gallery-caption {
     display: none;
 }
 
@@ -5354,6 +5501,38 @@ html[data-theme="dark"] .note-file-reference-link.meta-gallery-tile .meta-galler
 
 html[data-theme="dark"] .meta-gallery-picture:has([data-picture-source="first-page"]) {
     outline-color: rgba(255, 255, 255, 0.16);
+}
+
+/* A Markdown, text, code or data file: the top of it, drawn as the viewer draws it at three times
+   the tile's width and shrunk to fit, so it reads as a page (embedded_references.py,
+   _render_document_tile). Always a light page, as a PDF's first page is; a click goes to the tile. */
+.meta-gallery-document {
+    display: block;
+    width: 300%;
+    height: 300%;
+    padding: 28px 32px;
+    box-sizing: border-box;
+    overflow: hidden;
+    transform: scale(calc(1 / 3));
+    transform-origin: top left;
+    background: #ffffff;
+    color: #1f2933;
+    font-size: 16px;
+    line-height: 1.45;
+    text-align: left;
+    white-space: normal;
+    pointer-events: none;
+}
+
+/* The page's thin edge, as a PDF's first page has (a white page would vanish into a white note):
+   drawn on the page itself at three times its width, the shrinking makes it one pixel. */
+.meta-gallery-document {
+    border: 3px solid #d8dde6;
+    border-radius: 24px;
+}
+
+html[data-theme="dark"] .meta-gallery-document {
+    border-color: rgba(255, 255, 255, 0.48);
 }
 
 /* A PDF without its first page drawn (yet): its badge and name in the middle of the square. */
@@ -6858,7 +7037,9 @@ body.pref-animated-transitions .note-tag-bar:focus-within::after {
     font-size: 0.9rem;
 }
 
-.note-tag-suggestion:hover {
+/* Pointing highlights an entry only once the pointer has moved over the list
+   (tag-suggestions-service.js): one that opens under a pointer at rest highlights nothing. */
+.note-tag-suggestions.is-pointed .note-tag-suggestion:hover {
     background: var(--modal-quiet-button-hover);
     border-color: var(--modal-border);
 }
@@ -12163,6 +12344,27 @@ body.ai-tagging-locked .ai-chat-tag-operation select:enabled { cursor: var(--ski
     -webkit-box-orient: vertical;
 }
 
+/* A folded gallery in an embed keeps its row of pictures under that line (note_gallery.py), so
+   the line alone is cut (embedded_references.py wraps it). */
+.note-embed-gallery.note-embed-collapsed:not(.note-embed-held > .note-reference-content > .note-embed-with-source > .note-embed-root) > .note-embed-body > .note-embed-content,
+.note.collapsed:not(.editing) .note-embed-held > .note-reference-content > .note-embed-with-source > .note-embed-root.note-embed-gallery.note-embed-collapsed > .note-embed-body > .note-embed-content {
+    overflow: visible;
+    display: block;
+    -webkit-line-clamp: none;
+}
+
+.note-embed-gallery-first-line {
+    overflow: hidden;
+    display: -webkit-box;
+    -webkit-line-clamp: 1;
+    -webkit-box-orient: vertical;
+}
+
+/* The row sits right under the line, as in the list: the line's own bottom margin is dropped. */
+.note-embed-gallery-first-line > :last-child {
+    margin-bottom: 0;
+}
+
 /* An embed on a folded note's line folds with the note, whose own arrow unfolds it:
    the embed's arrow is hidden, its space kept so the line does not move. */
 .note.collapsed:not(.editing) > .note-content .note-embed-root.note-embed-collapsed > .note-embed-body > .note-embed-collapse-toggle,
@@ -12652,7 +12854,9 @@ suggestions as pills. */
     font-size: 14px;
 }
 
-@media (max-width: 640px) {
+/* The phone layout: a narrow screen whose main pointer is a finger (phone-mode.js, the same
+   query). A narrow window on a desktop keeps the desktop layout. */
+@media (max-width: 640px) and (pointer: coarse) {
     body {
         --phone-bar-height: 56px;
         padding: 0 0 calc(var(--phone-bar-height) + env(safe-area-inset-bottom)) 0;
@@ -13330,6 +13534,32 @@ suggestions as pills. */
 
 .wizard-key-field {
     margin-top: 22px;
+}
+
+.modal-content .wizard-toggle input[type="radio"] {
+    flex: none;
+    width: auto;
+    margin: 0;
+}
+
+/* A folder that came in before (the import's Summary): its choice over the counts, the box
+   for the edited notes under Replace, indented as its part. */
+.wizard-again:not(:empty) {
+    margin-bottom: 18px;
+}
+
+.wizard-again-edited {
+    margin-left: 26px;
+}
+
+.wizard-again .wizard-note + .wizard-toggle {
+    margin-top: 12px;
+}
+
+/* The import's Folder screen: only the files changed since a day, under the folder's name. */
+.wizard-field.wizard-changed-since {
+    max-width: 200px;
+    margin-top: 20px;
 }
 
 /* A step's yes or no at its top; unticked, the fields under it fold away. */

@@ -194,6 +194,10 @@ class _ExportFileRecord:
     size_bytes: int
     thumbnail_kind: str
     export_data_url: str
+    # A PDF's tile in a gallery reads it (embedded_references._render_pdf_tile); the export
+    # shows the PDF's badge and name whatever it is. Without it, exporting a gallery that
+    # held a PDF answered 500 (2026-11-18).
+    first_page_revision: int
 
 
 def _indent_block(text: str, spaces: int) -> str:
@@ -610,6 +614,7 @@ def _render_exported_notes_markup(
                 size_bytes=record.size_bytes,
                 thumbnail_kind=thumbnail_kind,
                 export_data_url=export_data_url,
+                first_page_revision=record.first_page_revision,
             )
         return file_record_cache[file_id]
 
@@ -742,6 +747,7 @@ def _render_exported_note_node(
             context=embed_render_context,
             static_export=True,
             credentials=credentials,
+            is_embedded=False,
         )))
         # It starts as MetaList shows it: a note that is only a reference folds as its source.
         shown_state_id = resolve_held_source(

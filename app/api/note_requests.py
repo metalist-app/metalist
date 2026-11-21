@@ -254,6 +254,8 @@ class TagSuggestionsRequest(TypedDict):
     explicit_tags: list[Identifier]
     prefix: Text
     content_html: Content
+    # The search of the list the note is edited in: a tag it excludes is not offered unasked.
+    search: Text
 
 @with_config(ConfigDict(strict=True))
 class FormatPreviewRequest(TypedDict):

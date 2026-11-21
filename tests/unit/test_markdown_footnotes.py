@@ -105,7 +105,7 @@ def test_a_folded_note_shows_the_numbers_of_its_first_line() -> None:
     )
     rendered = render_collapsed_note_content_with_embeds(
         note_id=NOTE_ID, content_html="".join(f"<div>{line}</div>" for line in LISBON), tags="@markdown",
-        context=context, static_export=False, credentials=CredentialDisplay.DOTS,
+        context=context, static_export=False, credentials=CredentialDisplay.DOTS, is_embedded=False,
     )
     assert markers(rendered)[:2] == ["1", "2"]
     assert "[^ferry]" not in rendered

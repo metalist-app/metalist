@@ -279,6 +279,7 @@ def test_build_notes_export_document_uses_search_scope_and_static_reference_mark
         mime_type="image/png",
         size_bytes=8192,
         thumbnail_kind="image",
+        first_page_revision=0,
     )
 
     monkeypatch.setattr(export_module, "note_store", store)
@@ -1001,3 +1002,70 @@ def test_a_download_folds_a_note_to_the_line_its_embed_starts_after(monkeypatch:
     assert _opening(html, _A).startswith('<article class="note collapsed"')
     assert _folded_copy(html, _A) == "Snack:"
     assert _folded_copy(html, _HOLDER) == "Nuts"
+
+
+# The maintainer, 2026-11-18: Export as HTML answered 500 for a view holding a @gallery note with
+# a PDF. A PDF's tile reads the file's first-page revision (2026-11-10), which the export's own
+# file record did not carry. An export has no first pages: the PDF shows as its badge and name.
+def test_a_gallery_with_a_pdf_exports_the_pdf_as_its_badge_and_name(monkeypatch: pytest.MonkeyPatch) -> None:
+    pdf_id = "a1111111-5ec9-4b09-9647-909c58ad997a"
+    notes = {
+        "trip": _Note("trip", None, None, None, False, "<div>Lisbon trip</div>", "@gallery"),
+        "day": _Note("day", "trip", None, None, False, f"<div>Tickets</div><div>![[{pdf_id}]]</div>", ""),
+    }
+    store = _FakeNoteStore(notes=notes, children_by_parent={None: ["trip"], "trip": ["day"]})
+    pdf_record = SimpleNamespace(
+        id=pdf_id, title="tickets.pdf", original_filename="tickets.pdf", mime_type="application/pdf",
+        size_bytes=8192, thumbnail_kind="pdf", first_page_revision=3,
+    )
+    monkeypatch.setattr(export_module, "note_store", store)
+    monkeypatch.setattr(snapshot_module, "note_store", store)
+    monkeypatch.setattr(export_module, "file_registry", _FakeFileRegistry({pdf_id}))
+    monkeypatch.setattr(export_module, "get_file_reference_record", lambda file_id, token: pdf_record)
+
+    html = build_notes_export_document(
+        purpose="download", title="", include_credentials=False,
+        sort_mode="normal", date_filter=None, file_filter=None, is_untagged_view=False,
+        search="other", theme="light", stats_style="strip", token="token",
+        root_note_id="trip", editing_note_id=None,
+    )
+
+    assert "Lisbon trip" in html
+    assert '<span class="meta-gallery-file-name">tickets.pdf</span>' in html
+    assert f'data-file-ref-id="{pdf_id}" data-picture-source="first-page"' not in html, "an export loads no first page"
+
+
+# The maintainer, 2026-11-19: a @gallery note inside an embed shows its grid, as in the list
+# (tests/unit/test_embedded_gallery.py). An export of the note embedding it carries the grid too,
+# with the tile an export gives a PDF, and marks the embedded note so its children stay hidden.
+@pytest.mark.parametrize("purpose", ["download", "print"])
+def test_an_embedded_gallery_exports_its_grid(monkeypatch: pytest.MonkeyPatch, purpose: str) -> None:
+    pdf_id = "a1111111-5ec9-4b09-9647-909c58ad997a"
+    trip_id = "b2222222-5ec9-4b09-9647-909c58ad997a"
+    day_id = "c3333333-5ec9-4b09-9647-909c58ad997a"
+    notes = {
+        "report": _Note("report", None, None, None, False, f"<div>Report</div><div>![[{trip_id}]]</div><div>after</div>", ""),
+        trip_id: _Note(trip_id, None, None, None, False, "<div>Lisbon trip</div>", "@gallery"),
+        day_id: _Note(day_id, trip_id, None, None, False, f"<div>Tickets</div><div>![[{pdf_id}]]</div>", ""),
+    }
+    store = _FakeNoteStore(notes=notes, children_by_parent={None: ["report", trip_id], trip_id: [day_id]})
+    pdf_record = SimpleNamespace(
+        id=pdf_id, title="tickets.pdf", original_filename="tickets.pdf", mime_type="application/pdf",
+        size_bytes=8192, thumbnail_kind="pdf", first_page_revision=3,
+    )
+    monkeypatch.setattr(export_module, "note_store", store)
+    monkeypatch.setattr(snapshot_module, "note_store", store)
+    monkeypatch.setattr(export_module, "file_registry", _FakeFileRegistry({pdf_id}))
+    monkeypatch.setattr(export_module, "get_file_reference_record", lambda file_id, token: pdf_record)
+
+    html = build_notes_export_document(
+        purpose=purpose, title="", include_credentials=False,
+        sort_mode="normal", date_filter=None, file_filter=None, is_untagged_view=False,
+        search="other", theme="light", stats_style="strip", token="token",
+        root_note_id="report", editing_note_id=None,
+    )
+
+    body = html[html.index("<body"):]
+    assert "note-embed-root note-embed-gallery" in body
+    assert '<section class="meta-gallery"' in body
+    assert '<span class="meta-gallery-file-name">tickets.pdf</span>' in body

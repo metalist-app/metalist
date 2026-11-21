@@ -310,6 +310,61 @@ function expectTab(state, tabId, query, label) {
     `${label}: only the tab's notes are shown`);
 }
 
+// The number keys 1 to 9 switch to the search context the list numbers that way, only while
+// nothing is typed (the maintainer, 2026-11-21; search-context-digit-service.js). Starts and
+// ends on the second tab.
+async function checkNumberKeysSwitchContexts(page, firstTabId, secondTabId) {
+  const order = await tabOrder(page);
+  const digitOf = tabId => String(order.indexOf(tabId) + 1);
+  const press = async key => {
+    await page.keyboard.press(key);
+    await idle(page);
+    await pause(SETTLE_MS);
+  };
+  await page.$eval('#search-input', input => input.blur());
+  await press(digitOf(firstTabId));
+  expectTab(await viewState(page), firstTabId, TAB_QUERIES[0], 'its number pressed, the first tab');
+  await press(digitOf(secondTabId));
+  expectTab(await viewState(page), secondTabId, TAB_QUERIES[1], 'its number pressed, the second tab');
+  // The number of the context shown, a number with no context, and a number with a key held.
+  await press(digitOf(secondTabId));
+  await press(String(order.length + 1));
+  await page.keyboard.down('Alt');
+  await press(digitOf(firstTabId));
+  await page.keyboard.up('Alt');
+  expectTab(await viewState(page), secondTabId, TAB_QUERIES[1], 'numbers that choose nothing');
+  // In the search box a number is typed.
+  await page.click('#search-input');
+  await page.keyboard.press('End');
+  await page.keyboard.type(digitOf(firstTabId));
+  assert.equal(await page.$eval('#search-input', input => input.value), `${TAB_QUERIES[1]}${digitOf(firstTabId)}`,
+    'a number typed in the search box is typed');
+  await page.keyboard.press('Backspace');
+  await page.$eval('#search-input', input => input.blur());
+  await idle(page);
+  assert.equal((await viewState(page)).activeTabId, secondTabId, 'typing a number in the search box switches nothing');
+  // In a note being edited a number is typed.
+  await page.click('#notes-container .note > .note-content');
+  await page.waitForFunction(() => document.activeElement.classList.contains('note-content') && document.activeElement.isContentEditable);
+  await page.keyboard.type(digitOf(firstTabId));
+  assert.equal(await page.evaluate(() => document.activeElement.textContent.includes('Tab switch')), true, 'the note is the one edited');
+  assert.match(await page.evaluate(() => document.activeElement.textContent), new RegExp(digitOf(firstTabId)),
+    'a number typed in a note is typed');
+  await page.keyboard.press('Backspace');
+  await page.keyboard.press('Escape');
+  await idle(page);
+  await pause(SETTLE_MS);
+  expectTab(await viewState(page), secondTabId, TAB_QUERIES[1], 'typing a number in a note switches nothing');
+  // With a dialog open (the cheat sheet) a number does nothing.
+  await page.keyboard.press('?');
+  await page.waitForSelector('.help-modal-content', {visible: true});
+  await press(digitOf(firstTabId));
+  assert.equal((await viewState(page)).activeTabId, secondTabId, 'a number with a dialog open switches nothing');
+  await page.keyboard.press('Escape');
+  await idle(page);
+  await pause(SETTLE_MS);
+}
+
 export async function checkTabSwitching(page) {
   const ids = await createNotes(page);
   await page.reload();
@@ -335,6 +390,7 @@ export async function checkTabSwitching(page) {
       await clickTab(page, secondTabId);
       expectTab(await viewState(page), secondTabId, TAB_QUERIES[1], `round ${round}, back to the second tab`);
     }
+    await checkNumberKeysSwitchContexts(page, firstTabId, secondTabId);
     // What a tab shows and its order stay the tab's until each is ended with its × (the
     // maintainer, 2026-11-02, docs/ui/state-handling.md: sorted by Created, a journal tab came
     // back in its normal order after another tab was visited; a new search ended them too).

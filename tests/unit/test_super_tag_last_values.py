@@ -70,7 +70,7 @@ def _typed(prefix: str, *, note_id: str) -> list[str]:
     """What the tag bar shows; it sends what is typed as its last token."""
     return [suggestion.tag for suggestion in suggest_tags_with_reasons_for_note(
         note_id=note_id, anchors=[], explicit_tags=[prefix], prefix=prefix,
-        content_html=store.get_note(note_id).content, limit=_LIMIT,
+        content_html=store.get_note(note_id).content, limit=_LIMIT, search="",
     )]
 
 
@@ -115,7 +115,7 @@ def test_the_empty_bar_offers_the_values_first_too(live_database) -> None:
 
     empty_bar = [suggestion.tag for suggestion in suggest_tags_with_reasons_for_note(
         note_id="sleep", anchors=[], explicit_tags=[], prefix="",
-        content_html=store.get_note("sleep").content, limit=_LIMIT,
+        content_html=store.get_note("sleep").content, limit=_LIMIT, search="",
     )]
 
     assert empty_bar[:2] == ["no-alcohol:days=19", "no-alcohol"]
@@ -165,7 +165,7 @@ def test_the_last_values_say_where_they_come_from(live_database) -> None:
 
     suggestions = suggest_tags_with_reasons_for_note(
         note_id="today", anchors=[], explicit_tags=["brea"], prefix="brea",
-        content_html=store.get_note("today").content, limit=_LIMIT,
+        content_html=store.get_note("today").content, limit=_LIMIT, search="",
     )
 
     assert suggestions[0].tag == "breakfast-burrito:calories=750:fat=12g:carbs=60G"

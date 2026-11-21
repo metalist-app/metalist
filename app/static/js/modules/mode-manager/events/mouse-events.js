@@ -34,7 +34,9 @@ import { isContextMenuInteractionTarget } from '../../context-menu/context-menu-
 import { downloadEmailAttachment, downloadFileReference } from '../services/file-reference-service.js';
 import { openFileViewer, opensInViewer } from '../services/file-viewer-service.js';
 import { zoomGallery } from '../services/image-context-menu-action-service.js';
-import { goToGalleryItem, toggleGalleryOutline } from '../services/gallery-view-service.js';
+import {
+    galleryElementOf, galleryNoteIdOf, goToGalleryItem, isGalleryNoteListed, toggleGalleryOutline,
+} from '../services/gallery-view-service.js';
 import { toggleSearchEmbedFold } from '../services/search-embed-service.js';
 import { playMediaFile } from '../services/media-player-service.js';
 import { parseDecimalInteger } from '../../decimal-integer.js';
@@ -2243,10 +2245,11 @@ function isGalleryDrawing(tile) {
 }
 
 function showGalleryFullScreen(clickedTile) {
-    const galleryNote = clickedTile.closest('.note[data-note-id]');
-    if (galleryNote === null) {
+    const gallery = galleryElementOf(clickedTile);
+    if (gallery === null) {
         throw new Error('A gallery tile must be in a note');
     }
+    const galleryNoteId = galleryNoteIdOf(gallery);
     const pictures = [];
     let index = -1;
     for (const tile of clickedTile.closest('.meta-gallery-grid').querySelectorAll('.meta-gallery-tile')) {
@@ -2286,9 +2289,11 @@ function showGalleryFullScreen(clickedTile) {
     zoomGallery({
         pictures,
         index,
+        // From an embed whose source the list doesn't show there is no note to go to: no button.
+        canGoToNote: isGalleryNoteListed(galleryNoteId),
         onGoToNote: (noteId) => {
             void CommandGate.run('mouse.gallery_go_to_note', async () => {
-                await goToGalleryItem(galleryNote.dataset.noteId, noteId);
+                await goToGalleryItem(galleryNoteId, noteId);
             });
         },
         onOpen: (picture) => {
@@ -2314,12 +2319,13 @@ function handleGallerySwitchClick(event) {
     if (ModeContext.isEditing) {
         return true;
     }
-    const note = toggle.closest('.note[data-note-id]');
-    if (note === null) {
+    const gallery = galleryElementOf(toggle);
+    if (gallery === null) {
         throw new Error('A gallery switch must be in a note');
     }
+    const galleryNoteId = galleryNoteIdOf(gallery);
     void CommandGate.run('mouse.gallery_switch', async () => {
-        await toggleGalleryOutline(note.dataset.noteId);
+        await toggleGalleryOutline(galleryNoteId);
     });
     return true;
 }

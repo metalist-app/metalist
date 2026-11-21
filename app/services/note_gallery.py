@@ -67,6 +67,12 @@ class GalleryItem:
     caption: str
 
 
+def every_note_shown(gallery_note_id: str, note_id: str) -> bool:
+    """A gallery inside an embed shows every note under it (docs/ui/references.md: an embed shows
+    its source and children wherever its host shows)."""
+    return True
+
+
 def gallery_kinds(tags: str) -> Optional[Tuple[str, ...]]:
     """The file kinds a note's @gallery asks for: () for plain @gallery, None for no @gallery."""
     if not isinstance(tags, str):
@@ -141,15 +147,19 @@ def collect_gallery_items(
     context: GalleryTree,
     file_ids_in: Callable[[str], Iterable[Tuple[int, str]]],
     first_line_of: Callable[[str], str],
+    is_shown: Callable[[str, str], bool],
 ) -> List[GalleryItem]:
     """The pictures the gallery shows, in outline order (the note, then each child's subtree in
-    turn), each once, where it first appears; under a search, of the notes it shows."""
+    turn), each once, where it first appears, of the notes `is_shown` (asked with the gallery's
+    note first) says it shows: in the list under a search, the notes the search shows
+    (`context.is_shown_in_gallery`); inside an embed, every note, as the embed shows its source
+    whole whatever the search (every_note_shown)."""
     items: List[GalleryItem] = []
     seen: set[Tuple[str, str]] = set()
     pending = [note_id]
     while pending:
         current_id = pending.pop()
-        if not context.is_shown_in_gallery(note_id, current_id):
+        if not is_shown(note_id, current_id):
             continue
         caption: Optional[str] = None
         for _start, file_id, image_source in _note_pictures(note_id=current_id, kinds=kinds, context=context, file_ids_in=file_ids_in):
@@ -201,7 +211,7 @@ def gallery_kinds_found(
     bar offers after `@gallery=` (docs/future-plans/gallery.md, decision 4)."""
     items = collect_gallery_items(
         note_id=note_id, kinds=_OFFERED_KINDS, context=context, file_ids_in=file_ids_in,
-        first_line_of=lambda content_html: "",
+        first_line_of=lambda content_html: "", is_shown=context.is_shown_in_gallery,
     )
     counts: Counter[str] = Counter()
     for item in items:

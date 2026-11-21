@@ -166,6 +166,8 @@ async function waitForFileTokens(page, noteId, count) {
   }, {timeout: WAIT_MS}, noteId, count);
 }
 
+// Case 15 leaves three files in the note; case 14 adds two.
+const TOKENS_AFTER_CASE_14 = 5;
 const TRIP_SELECTOR = tripId => `#notes-container > .note[data-note-id="${tripId}"] .note-content`;
 
 // 9: one file on the column: a note at the top, as before.
@@ -234,17 +236,18 @@ async function checkFilesOnTheEditedNote(page, tripId) {
   assert.deepEqual(await rootIds(page), before, 'case 15: on its margin, no new notes');
 }
 
-// 14: files dropped outside the note being edited: saved and closed, one note each. Runs right after 15, the note open.
-async function checkFilesOutsideTheEditedNote(page, tripId, created) {
+// 14 (changed 2026-11-19; it was "saved and closed, one note each"): files let go outside the note
+// being edited still go into it. Runs right after 15, the note open.
+async function checkFilesOutsideTheEditedNote(page, tripId) {
   const before = await rootIds(page);
   await drop(page, '#notes-container', [csv('fourteen-a.csv'), csv('fourteen-b.csv')]);
-  await waitForRootCount(page, before.length + 2);
-  const after = await rootIds(page);
-  created.push(...newOnes(after, before));
-  assert.equal(await isEditing(page), false, 'case 14: nothing left open');
-  assert.ok(!(await noteOf(page, tripId)).text.includes('fourteen-a.csv'), 'case 14: not in the note that was open');
-  assert.ok((await noteOf(page, after[0])).text.includes('fourteen-a.csv'), 'case 14: the first file has its own note');
-  assert.ok((await noteOf(page, tripId)).text.includes('fifteen-margin.csv'), 'case 14: the open note was saved');
+  await waitForFileTokens(page, tripId, TOKENS_AFTER_CASE_14);
+  await idle(page);
+  assert.deepEqual(await rootIds(page), before, 'case 14: no new notes');
+  assert.equal(await isEditing(page), true, 'case 14: the note is still being edited');
+  await leaveEditing(page);
+  const text = (await noteOf(page, tripId)).text;
+  assert.ok(text.includes('fourteen-a.csv') && text.includes('fourteen-b.csv'), 'case 14: both files are in the note that was open');
 }
 
 // 17: a file that fails: the notes made stay, the error names it.
@@ -380,7 +383,7 @@ export async function checkFileDropNotes(page) {
     await checkAPasteMakesOneNote(page, created);
     await startEditing(page, tripId);
     await checkFilesOnTheEditedNote(page, tripId);
-    await checkFilesOutsideTheEditedNote(page, tripId, created);
+    await checkFilesOutsideTheEditedNote(page, tripId);
     await checkOneFileFails(page, created);
     await checkImageOnTheColumn(page);
     await checkImageIntoANote(page, tripId);

@@ -148,6 +148,14 @@ def parse_backup_namespace_from_filename(filename: str) -> str:
     return stem
 
 
+def is_backup_filename(filename: str) -> bool:
+    """Whether a file has a name MetaList gives a backup (an archive, or an older primary
+    backup): what a restore goes by, so a renamed backup is not one."""
+    if not isinstance(filename, str) or filename == "":
+        raise ValueError("filename must be a non-empty string")
+    return any((_is_archive_backup_filename(filename), _is_legacy_primary_backup_filename(filename)))
+
+
 def _stat_to_backup_info(path: Path) -> BackupFileInfo:
     if not path.exists():
         raise FileNotFoundError(f"Backup file not found: {path}")

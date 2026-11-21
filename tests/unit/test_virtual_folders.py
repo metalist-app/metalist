@@ -78,6 +78,7 @@ def imported_vault(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> NoteStore
     CmdImportObsidianVault(
         source="obsidian", folder_path=str(tmp_path), split_mode=SPLIT_HEADINGS_AND_LISTS,
         content_format=CONTENT_MARKDOWN, folder_prefix="", add_to_existing=False, images=KEEP_ORIGINALS, token=TOKEN, imported_at=IMPORTED_AT,
+        folder_name="vault", changed_since="", earlier_notes="keep",
     ).execute()
     yield store
     session.close()
@@ -426,6 +427,7 @@ def test_an_import_lists_its_progress_a_part_per_file(
     CmdImportObsidianVault(
         source="obsidian", folder_path=str(folder), split_mode=SPLIT_HEADINGS_AND_LISTS, content_format=CONTENT_MARKDOWN,
         folder_prefix="Progress", add_to_existing=False, images=KEEP_ORIGINALS, token=TOKEN, imported_at=IMPORTED_AT,
+        folder_name="vault", changed_since="", earlier_notes="keep",
     ).execute()
     # Seen as each file is stored, before its count goes up: out of the files it imports.
     assert seen == [(0, 2), (1, 2)]

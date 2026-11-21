@@ -124,15 +124,109 @@ function notesWord(count) {
 
 /** The server's preview for the choices so far, drawn into the summary (summarySelector). */
 export async function fillImportPreview(screen, wizard, summarySelector) {
-    let html = '';
     if (wizard.choices.source === BOOKMARKS_SOURCE) {
-        html = bookmarksPreviewHtml(await NotesAPI.previewBookmarkImport(bookmarksRequest(wizard.choices)));
-    } else {
-        html = importPreviewHtml(await NotesAPI.previewImport(importRequest(wizard.choices)), wizard.choices);
+        const html = bookmarksPreviewHtml(await NotesAPI.previewBookmarkImport(bookmarksRequest(wizard.choices)));
+        const bookmarksSummary = screen.querySelector(summarySelector);
+        if (bookmarksSummary === null || !bookmarksSummary.isConnected) return;
+        bookmarksSummary.innerHTML = html;
+        return;
     }
+    const preview = await NotesAPI.previewImport(importRequest(wizard.choices));
     const summary = screen.querySelector(summarySelector);
     if (summary === null || !summary.isConnected) return;
-    summary.innerHTML = html;
+    // The folder came in before: asked first, over what the import will do with the answer.
+    summary.innerHTML = `<div class="wizard-again">${importedBeforeHtml(preview.again, wizard.choices)}</div>
+        <div class="wizard-preview-counts">${importPreviewHtml(preview, wizard.choices)}</div>`;
+    showNothingToBringIn(screen, wizard, preview);
+    wireImportedBefore(screen, wizard, summary);
+}
+
+// --- A folder that came in before (docs/ready-to-build/import-export-launch.md §5, "Importing again") -------------------
+
+const KEEP_BOTH = 'keep';
+const REPLACE = 'replace';
+const REPLACE_EDITED = 'replace-edited';
+const NOTHING_TO_BRING_IN = 'Every file is as it was when you imported it.';
+
+// What the server is asked: Replace with its box ticked also replaces the notes edited in MetaList.
+function earlierNotesChoice(choices) {
+    if (choices.earlierNotes === REPLACE && choices.replacesEdited) return REPLACE_EDITED;
+    return choices.earlierNotes;
+}
+
+function dayText(isoMoment) {
+    return new Date(isoMoment).toLocaleDateString(undefined, { day: 'numeric', month: 'long', year: 'numeric' });
+}
+
+// Shown only when some of these files came in before: when, how many changed since, how many
+// of those were edited in MetaList, and the choice. Keep both is chosen at first: nothing is
+// lost without a click (the maintainer, 2026-11-20).
+function importedBeforeHtml(again, choices) {
+    if (!Number.isInteger(again.fileCount) || !Number.isInteger(again.changedCount) || !Number.isInteger(again.editedCount)
+        || !Array.isArray(again.edited) || typeof again.importedAt !== 'string') {
+        throw new Error('Import preview answered without what came in before');
+    }
+    if (again.fileCount === NONE) return '';
+    let changed = `${countedWord(again.changedCount, 'file', 'files')} changed since.`;
+    if (again.changedCount === NONE) changed = 'No file changed since.';
+    let edited = '';
+    if (again.editedCount > NONE) {
+        edited = ` ${again.editedCount} of them you edited in MetaList.`;
+    }
+    return `
+        <p class="wizard-note"><strong>${escapeHtml(choices.folderName)} was imported before</strong> (${escapeHtml(dayText(again.importedAt))}).</p>
+        <p class="wizard-note">${escapeHtml(changed)}${escapeHtml(edited)}</p>
+        <label class="wizard-toggle"><input type="radio" name="wizard-earlier-notes" value="${KEEP_BOTH}"${choices.earlierNotes === KEEP_BOTH ? ' checked' : ''}> Keep both</label>
+        <label class="wizard-toggle"><input type="radio" name="wizard-earlier-notes" value="${REPLACE}"${choices.earlierNotes === REPLACE ? ' checked' : ''}> Replace the old notes</label>
+        <div class="wizard-again-edited">${replaceEditedHtml(again, choices)}</div>`;
+}
+
+// Under Replace, when some changed files' notes were edited in MetaList: whether those go too,
+// with their files under the arrow.
+function replaceEditedHtml(again, choices) {
+    if (choices.earlierNotes !== REPLACE || again.editedCount === NONE) return '';
+    const items = again.edited.map((path) => `
+        <li class="wizard-kind-file"><span class="wizard-kind-file-name">${escapeHtml(path)}</span></li>`).join('');
+    return `
+        <label class="wizard-toggle"><input type="checkbox" data-wizard-replace-edited${choices.replacesEdited ? ' checked' : ''}> Also replace the ${again.editedCount} you edited</label>
+        <details class="wizard-left-out">
+            <summary><span class="wizard-kind-arrow" aria-hidden="true"></span>${escapeHtml(countedWord(again.editedCount, 'file', 'files'))}</summary>
+            <ul class="wizard-kind-files">${items}</ul>
+        </details>`;
+}
+
+// Replace with nothing changed brings nothing in: said in place of the counts, and Next waits.
+function showNothingToBringIn(screen, wizard, preview) {
+    const isNothing = preview.rootNoteCount === NONE;
+    wizard.choose('nothingToBringIn', isNothing);
+    if (isNothing) {
+        screen.querySelector('.wizard-preview-counts').innerHTML = `<p class="wizard-note">${escapeHtml(NOTHING_TO_BRING_IN)}</p>`;
+    }
+    // Next follows the answer (the wizard listens for input).
+    screen.dispatchEvent(new Event('input'));
+}
+
+// A choice here changes what the import will do: the counts under it are asked again and
+// drawn in place, the choice itself staying where it is.
+function wireImportedBefore(screen, wizard, summary) {
+    const block = summary.querySelector('.wizard-again');
+    block.onchange = async (event) => {
+        if (!(event.target instanceof HTMLInputElement)) return;
+        if (event.target.type === 'radio') {
+            wizard.choose('earlierNotes', event.target.value);
+        } else {
+            wizard.choose('replacesEdited', event.target.checked);
+        }
+        const asked = earlierNotesChoice(wizard.choices);
+        const preview = await NotesAPI.previewImport(importRequest(wizard.choices));
+        // Chosen again meanwhile: the answer is for an older choice.
+        if (!summary.isConnected || earlierNotesChoice(wizard.choices) !== asked) return;
+        if (event.target.type === 'radio') {
+            block.querySelector('.wizard-again-edited').innerHTML = replaceEditedHtml(preview.again, wizard.choices);
+        }
+        summary.querySelector('.wizard-preview-counts').innerHTML = importPreviewHtml(preview, wizard.choices);
+        showNothingToBringIn(screen, wizard, preview);
+    };
 }
 
 /**
@@ -256,6 +350,9 @@ function importRequest(choices) {
         prefixFolder: choices.prefixText, addToExisting: choices.addToExisting,
         compressesImages: bringsInImages(choices) && choices.imagesAs === IMAGES_COMPRESSED,
         imageLongestSide: Number(choices.imageLongestSide),
+        // A dropped folder's holding folder has the files changed since alone (scanFolder).
+        folderName: choices.folderName, changedSince: choices.droppedFolderId === '' ? choices.changedSince : '',
+        earlierNotes: earlierNotesChoice(choices),
         ...fileSelection(choices),
     };
 }
@@ -609,6 +706,29 @@ function bookmarksPreviewHtml(preview) {
 
 // --- The folder the notes go into (docs/ready-to-build/import-prefix-folder.md) -----------
 
+// "Changed since": only the files changed on or after a day come in ('' for all of them).
+// The day starts at this computer's midnight, as the server reads it (import_again.py).
+function isChangedSince(modifiedMs, changedSince) {
+    if (changedSince === '') return true;
+    return modifiedMs >= new Date(`${changedSince}T00:00:00`).getTime();
+}
+
+function changedSinceFieldHtml(choices) {
+    return `
+        <label class="wizard-field wizard-changed-since"><span>Changed since</span>
+            <input type="date" class="wizard-input" data-wizard-changed-since value="${escapeHtml(choices.changedSince)}"
+                title="Only the files changed on or after this day. Empty: all of them."></label>`;
+}
+
+function wireChangedSinceField(screen, wizard) {
+    const input = screen.querySelector('[data-wizard-changed-since]');
+    if (input === null) return;
+    input.addEventListener('change', () => {
+        // Other files come in: the checklist is read again, with nothing ticked against it.
+        wizard.chooseMany({ changedSince: input.value, scan: null, excludedGroups: [], fileExceptions: [], uploadedSelection: '' });
+    });
+}
+
 function prefixFieldHtml(choices) {
     return `
         <label class="wizard-field wizard-into-field"><span>Folder as it will appear in MetaList</span>
@@ -674,8 +794,10 @@ async function scanFolder(wizard) {
     const run = wizard.openGeneration;
     // A dropped folder: its checklist from the browser's list of its files, nothing sent yet.
     const scan = wizard.choices.droppedFolderId === ''
-        ? await NotesAPI.scanImportFolder(wizard.choices.folderPath)
-        : await NotesAPI.scanImportListing(heldDroppedFolder(wizard.choices.droppedFolderId).files.map(({ path, size }) => ({ path, size })));
+        ? await NotesAPI.scanImportFolder(wizard.choices.folderPath, wizard.choices.changedSince)
+        : await NotesAPI.scanImportListing(heldDroppedFolder(wizard.choices.droppedFolderId).files
+            .filter(({ file }) => isChangedSince(file.lastModified, wizard.choices.changedSince))
+            .map(({ path, size }) => ({ path, size })));
     if (!wizard.isCurrentOpen(run)) return;
     if (!Array.isArray(scan.groups) || !Number.isInteger(scan.freeBytes)) {
         throw new Error('Import folder scan answered malformed');
@@ -728,7 +850,7 @@ export async function droppedFilesChoices(files, intoFolder) {
     }
     // As the server writes paths (macOS gives names decomposed).
     for (const file of files) await NotesAPI.uploadImportFile(started.uploadId, file.name.normalize('NFC'), file);
-    const scan = await NotesAPI.scanImportFolder(started.folderPath);
+    const scan = await NotesAPI.scanImportFolder(started.folderPath, '');
     if (!Array.isArray(scan.groups) || !Number.isInteger(scan.freeBytes)) {
         throw new Error('Import folder scan answered malformed');
     }
@@ -1101,7 +1223,7 @@ export function importSteps({ withSourceStep, withSummaryAndRun }) {
                         <span class="wizard-choice-check" aria-hidden="true">✓</span>
                         <span class="wizard-folder-name">${escapeHtml(choices.folderName)}</span>
                         <span class="wizard-folder-counts">${choices.fileCount} ${escapeHtml(source.fileWord)}</span></div>`;
-                    into = prefixFieldHtml(choices);
+                    into = `${prefixFieldHtml(choices)}${changedSinceFieldHtml(choices)}`;
                 }
                 return `<p class="wizard-intro">${escapeHtml(source.folderIntro)}</p>
                     ${chosen}<button type="button" class="secondary-btn wizard-choose-folder" data-wizard-focus>Choose Folder…</button>${into}`;
@@ -1116,6 +1238,7 @@ export function importSteps({ withSourceStep, withSummaryAndRun }) {
                     void chooseFolder(wizard);
                 };
                 wirePrefixField(screen, wizard);
+                wireChangedSinceField(screen, wizard);
             },
             onChoice: null, onNext: null,
             problems: null, missing: (choices) => {
@@ -1255,7 +1378,8 @@ export function importSteps({ withSourceStep, withSummaryAndRun }) {
             nextLabel: NEXT, isAction: false, applies: () => withSummaryAndRun,
             render: () => '<div class="wizard-preview"><p class="wizard-note">Reading your files…</p></div>',
             wire: async (screen, wizard) => fillImportPreview(screen, wizard, '.wizard-preview'),
-            onChoice: null, onNext: null, problems: null, missing: NOTHING_MISSING,
+            onChoice: null, onNext: null, problems: null,
+            missing: (choices) => (choices.nothingToBringIn ? NOTHING_TO_BRING_IN : ''),
         }),
         ...(withSummaryAndRun ? [runStep({ key: 'importing', label: 'Import', title: 'Importing…', run: runImport })] : []),
     ];
@@ -1289,5 +1413,10 @@ export function importChoices() {
         // Files dropped on the page: the search of the context they were dropped in ('' for
         // none), which their notes take the tags of and stay in.
         isDrop: false,
+        // Importing again: only the files changed on or after this day ('' for all); what
+        // happens to the notes of files that came in before (kept beside the new ones at
+        // first), whether Replace takes the ones edited in MetaList too, and whether the
+        // last preview found nothing to bring in.
+        changedSince: '', earlierNotes: KEEP_BOTH, replacesEdited: false, nothingToBringIn: false,
     };
 }

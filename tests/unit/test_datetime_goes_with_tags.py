@@ -49,7 +49,7 @@ def _offered(note_id: str, *, typed: str) -> list[tuple[str, tuple[str, ...]]]:
         explicit = [*written, typed]
     return [(suggestion.tag, suggestion.reasons) for suggestion in suggest_tags_with_reasons_for_note(
         note_id=note_id, anchors=written, explicit_tags=explicit, prefix=typed,
-        content_html=store.get_note(note_id).content, limit=_LIMIT,
+        content_html=store.get_note(note_id).content, limit=_LIMIT, search="",
     )]
 
 

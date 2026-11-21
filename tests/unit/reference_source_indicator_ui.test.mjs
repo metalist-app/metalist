@@ -69,7 +69,7 @@ test('AI reference collections use a temporary labeled view without entering sea
     // history: a row records its own search, and goes to the page it was last on (2026-11-14).
     assert.match(
         keyboardEvents,
-        /const listedTabIds = tabOrder\.filter\(\(tabId\) => getReferenceNavigationLabelForTab\(tabId\) === ''\)/,
+        /return ModeContext\.tabOrder\.filter\(\(tabId\) => getReferenceNavigationLabelForTab\(tabId\) === ''\)/,
     );
 
     const mouseDownExclusion = mouseEvents.match(

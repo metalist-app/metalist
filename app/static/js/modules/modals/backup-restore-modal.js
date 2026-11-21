@@ -1,6 +1,5 @@
 import { PORT_RANGE_TEXT, isTcpPort } from '../tcp-ports.js';
 import { parseDecimalInteger } from '../decimal-integer.js';
-import { KIB } from '../byte-sizes.js';
 import { isAnsweredStatus } from '../http-status.js';
 import { ApplicationState } from '../application-state.js';
 import { FieldInputRejected, HttpRequestError, rethrowUnexpectedError } from '../expected-errors.js';
@@ -10,6 +9,7 @@ import { ModeContextInstance as ModeContext } from '../mode-manager/mode-context
 import { buildSessionHeaders } from '../session-auth.js';
 import { settleResult } from '../async-result.js';
 import { escapeHtml } from '../html-escape.js';
+import { SOURCE_CHOSEN_FILE, backupGroups, backupRow, backupsWithChosenFile } from './backup-list-row.js';
 import { actionRowHtml } from './action-row.js';
 import { failureFieldId, showErrorDialogFor } from './error-dialog.js';
 import { FloatingMessages } from '../floating-messages.js';
@@ -25,7 +25,6 @@ const SERVER_REACHABILITY_REQUEST_TIMEOUT_MS = 1000;
 const RESTORE_RECONNECT_CURSOR_CLASS = 'restore-reconnect-loading';
 // TCP port numbers are 16-bit.
 // The backup list grows with its entries up to this many rows, then scrolls.
-const BACKUP_LIST_MAX_VISIBLE_ROWS = 8;
 
 
 function parseResponseError(responseBody, statusCode) {
@@ -43,15 +42,6 @@ function parseResponseError(responseBody, statusCode) {
     }
     return `Request failed (${statusCode})`;
 }
-
-
-function backupSourceLabel(source) {
-    if (source === 'folder') {
-        return 'Folder';
-    }
-    return 'Local';
-}
-
 
 
 function stringifyPort(portValue) {
@@ -119,6 +109,10 @@ export class BackupRestoreModal extends BaseModal {
         return {
             loading: false,
             choosingFolder: false,
+            choosingFile: false,
+            canChooseFile: false,
+            openVault: '',
+            chosenFilePath: '',
             restoring: false,
             confirming: false,
             restored: false,
@@ -183,7 +177,7 @@ export class BackupRestoreModal extends BaseModal {
     // While a backup is restored or a folder chosen the dialog stays open.
     canRequestClose() {
         const state = this.getModalState();
-        return ![state.restoring, state.choosingFolder].includes(true);
+        return ![state.restoring, state.choosingFolder, state.choosingFile].includes(true);
     }
 
     handleClickOutside(event) {
@@ -226,6 +220,7 @@ export class BackupRestoreModal extends BaseModal {
         const preflight = state.preflight && typeof state.preflight === 'object' ? state.preflight : null;
         const loading = Boolean(state.loading);
         const choosingFolder = Boolean(state.choosingFolder);
+        const choosingFile = state.choosingFile === true;
         const restoring = Boolean(state.restoring);
         const confirming = Boolean(state.confirming);
         const restored = Boolean(state.restored);
@@ -275,31 +270,26 @@ export class BackupRestoreModal extends BaseModal {
         if (typeof selectedBackup === 'undefined') {
             selectedBackup = null;
         }
-        const selectSize = backups.length > 1 ? Math.min(backups.length, BACKUP_LIST_MAX_VISIBLE_ROWS) : 1;
-        const optionsHtml = backups.map((backup) => {
-            if (!backup || typeof backup !== 'object') {
-                throw new Error('Invalid backup list entry');
-            }
-            if (typeof backup.backup_id !== 'string' || backup.backup_id.length === 0) {
-                throw new Error('Backup entry missing backup_id');
-            }
-            if (typeof backup.filename !== 'string' || backup.filename.length === 0) {
-                throw new Error('Backup entry missing filename');
-            }
-            if (typeof backup.namespace !== 'string' || backup.namespace.length === 0) {
-                throw new Error('Backup entry missing namespace');
-            }
-            if (typeof backup.created_at !== 'string' || backup.created_at.length === 0) {
-                throw new Error('Backup entry missing created_at');
-            }
-            if (typeof backup.size_bytes !== 'number') {
-                throw new Error('Backup entry missing size_bytes');
-            }
-            const sourceLabel = backupSourceLabel(backup.source);
-            const isSelected = backup.backup_id === selectedBackupId ? 'selected' : '';
-            const label = `${sourceLabel} · ${backup.namespace} · ${backup.filename} (${Math.round(backup.size_bytes / KIB)} KB, ${backup.created_at})`;
-            return `<option value="${escapeHtml(backup.backup_id)}" ${isSelected}>${escapeHtml(label)}</option>`;
-        }).join('');
+        // Each backup is a row: its vault, when it was made, its size, where it is kept
+        // (backup-list-row.js). One is chosen with a click or the arrow keys.
+        const reader = { locale: navigator.language, timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone };
+        const isListDisabled = [loading, restoring, confirming].includes(true);
+        const rowHtml = (backup) => {
+            const row = backupRow(backup, reader);
+            // A chosen file's tooltip says where it is; a listed backup's, its file name.
+            const tooltip = backup.source === SOURCE_CHOSEN_FILE ? state.chosenFilePath : row.fileName;
+            return `
+                <label class="backup-restore-row" title="${escapeHtml(tooltip)}">
+                    <input type="radio" name="backup-choice" value="${escapeHtml(row.id)}" ${row.id === selectedBackupId ? 'checked' : ''} ${isListDisabled ? 'disabled' : ''}>
+                    <span class="backup-restore-when">${escapeHtml(row.when)}</span>
+                    <span class="backup-restore-size">${escapeHtml(row.size)}</span>
+                    <span class="backup-restore-source">${escapeHtml(row.source)}</span>
+                </label>`;
+        };
+        // A group per vault, its name as the heading (backupGroups).
+        const optionsHtml = backupGroups(backups, state.openVault).map((group) => `
+                <div class="backup-restore-group" data-backup-group="${escapeHtml(group.title)}">${escapeHtml(group.title)}</div>
+                ${group.backups.map(rowHtml).join('')}`).join('');
 
         const selectedNamespace = selectedBackup && typeof selectedBackup.namespace === 'string' ? selectedBackup.namespace : '';
         const isImport = Boolean(preflight && preflight.same_namespace === false);
@@ -328,13 +318,29 @@ export class BackupRestoreModal extends BaseModal {
         // Overwriting another vault is destructive: it is red, Enter never does it, and its
         // view starts in the field where the vault's name is typed (BaseModal).
         const overwritesVault = confirming && isImport && targetExists;
+        // Choose File…: only on the computer MetaList runs on, where the file dialog opens.
+        const chooseFileButtonHtml = state.canChooseFile === true
+            ? `<button type="button" class="secondary-btn backup-restore-choose-file" id="backup-restore-choose-file-btn" title="Restore a backup kept anywhere on this computer" ${[loading, restoring, choosingFile].includes(true) ? 'disabled' : ''}>Choose File…</button>`
+            : '';
         const emptyBackupsHtml = !loading && backups.length === 0 ? `
             <div class="backup-restore-empty-state">
                 <p>No backups are available from this vault's configured backup folder.</p>
-                <p>Choose the folder containing your MetaList backup archives.</p>
-                <button type="button" class="secondary-btn" id="backup-restore-choose-folder-btn" ${choosingFolder ? 'disabled' : ''}>${choosingFolder ? 'Choosing...' : 'Choose Backup Folder...'}</button>
+                <p>Choose the folder containing your MetaList backup archives${state.canChooseFile === true ? ', or one backup file' : ''}.</p>
+                <div class="backup-restore-empty-choices">
+                    <button type="button" class="secondary-btn" id="backup-restore-choose-folder-btn" ${choosingFolder ? 'disabled' : ''}>${choosingFolder ? 'Choosing...' : 'Choose Backup Folder...'}</button>
+                    ${chooseFileButtonHtml}
+                </div>
             </div>
         ` : '';
+        // With no backups there is no list to show: the empty state holds both choices.
+        const backupListHtml = backups.length === 0 ? '' : `
+                <div class="form-group">
+                    <span class="backup-restore-list-label" id="backup-list-label">Available backups</span>
+                    <div id="backup-select" class="backup-restore-list" role="radiogroup" aria-labelledby="backup-list-label" tabindex="-1">
+                        ${optionsHtml}
+                    </div>
+                    ${chooseFileButtonHtml}
+                </div>`;
 
         if (confirming) {
             if (selectedBackup === null) {
@@ -389,12 +395,7 @@ export class BackupRestoreModal extends BaseModal {
                 <p>Same-name restores overwrite that vault. Different-name imports create a vault unless the target already exists.</p>
                 ${emptyBackupsHtml}
 
-                <div class="form-group">
-                    <label for="backup-select">Available Backups</label>
-                    <select id="backup-select" size="${escapeHtml(String(selectSize))}" ${loading || restoring || confirming || backups.length === 0 ? 'disabled' : ''}>
-                        ${optionsHtml}
-                    </select>
-                </div>
+${backupListHtml}
 
                 <div class="form-group">
                     <label for="backup-target-namespace">Target vault</label>
@@ -448,6 +449,13 @@ export class BackupRestoreModal extends BaseModal {
             };
         }
 
+        const chooseFileButton = document.getElementById('backup-restore-choose-file-btn');
+        if (chooseFileButton instanceof HTMLButtonElement) {
+            chooseFileButton.onclick = async () => {
+                await this.chooseBackupFile();
+            };
+        }
+
         const chooseFolderButton = document.getElementById('backup-restore-choose-folder-btn');
         if (chooseFolderButton instanceof HTMLButtonElement) {
             chooseFolderButton.onclick = async () => {
@@ -456,19 +464,21 @@ export class BackupRestoreModal extends BaseModal {
         }
 
         const select = document.getElementById('backup-select');
-        if (select instanceof HTMLSelectElement) {
-            select.onchange = () => {
+        if (select instanceof HTMLElement) {
+            select.onchange = (event) => {
+                if (!(event.target instanceof HTMLInputElement) || event.target.name !== 'backup-choice') return;
+                const chosenId = event.target.value;
                 const backups = this.getModalState().backups;
                 let selectedBackup = null;
                 if (Array.isArray(backups)) {
-                    const found = backups.find((backup) => backup.backup_id === select.value);
+                    const found = backups.find((backup) => backup.backup_id === chosenId);
                     if (found !== undefined) selectedBackup = found;
                 }
                 const nextNamespace = selectedBackup && typeof selectedBackup.namespace === 'string'
                     ? selectedBackup.namespace
                     : '';
                 this.updateModalState({
-                    selectedBackupId: select.value,
+                    selectedBackupId: chosenId,
                     targetNamespaceText: nextNamespace,
                     confirming: false,
                     preflight: null,
@@ -476,7 +486,14 @@ export class BackupRestoreModal extends BaseModal {
                     overwriteConfirmText: '',
                     targetPassword: '',
                 });
+// Drawn again with the row chosen: the list keeps its scroll, and the keyboard its row.
+                const scrolledTo = select.scrollTop;
                 this.renderModalContent();
+                const list = document.getElementById('backup-select');
+                if (!(list instanceof HTMLElement)) throw new Error('The backup list is gone after it was drawn again');
+                list.scrollTop = scrolledTo;
+                const chosen = list.querySelector('input[name="backup-choice"]:checked');
+                if (chosen instanceof HTMLInputElement) chosen.focus();
             };
         }
 
@@ -555,6 +572,10 @@ export class BackupRestoreModal extends BaseModal {
         this.updateModalState({
             loading: true,
             choosingFolder: false,
+            choosingFile: false,
+            canChooseFile: false,
+            openVault: '',
+            chosenFilePath: '',
             restoring: false,
             confirming: false,
             restored: false,
@@ -582,12 +603,23 @@ export class BackupRestoreModal extends BaseModal {
             throw new Error('Backup list response missing backups array');
         }
 
+        if (typeof payload.can_choose_file !== 'boolean') {
+            throw new Error('Backup list response missing can_choose_file');
+        }
+        if (typeof payload.current_namespace !== 'string' || payload.current_namespace.length === 0) {
+            throw new Error('Backup list response missing current_namespace');
+        }
+
         const backups = payload.backups;
-        const firstBackup = backups.length > 0 ? backups[0] : null;
+        // The backup chosen to start with is the first one shown: the open vault's newest.
+        const groups = backupGroups(backups, payload.current_namespace);
+        const firstBackup = groups.length > 0 ? groups[0].backups[0] : null;
         const selectedBackupId = firstBackup && typeof firstBackup.backup_id === 'string' ? firstBackup.backup_id : '';
         const targetNamespaceText = firstBackup && typeof firstBackup.namespace === 'string' ? firstBackup.namespace : '';
         this.updateModalState({
             loading: false,
+            canChooseFile: payload.can_choose_file,
+            openVault: payload.current_namespace,
             backups,
             selectedBackupId,
             targetNamespaceText,
@@ -672,6 +704,42 @@ export class BackupRestoreModal extends BaseModal {
             return;
         }
         await this.loadBackups();
+    }
+
+    // Choose File…: a backup kept anywhere on this computer, picked in the system's file dialog.
+    // It joins the list on top, chosen; the backup folder stays as it is.
+    async chooseBackupFile() {
+        this.updateModalState({ choosingFile: true });
+        this.renderModalContent();
+        // No progress card: the system's file dialog is on screen until it answers.
+        const pickResult = await settleResult(() => this._authRequest(CONFIG.API.BACKUP.RESTORE_FILE_PICK, 'POST', {}));
+        this.updateModalState({ choosingFile: false });
+        if (!pickResult.ok) {
+            this.renderModalContent();
+            await showErrorDialogFor(pickResult.error, null);
+            return;
+        }
+        const picked = pickResult.value;
+        if (!picked || typeof picked.selected !== 'boolean' || !Array.isArray(picked.backups) || typeof picked.file_path !== 'string') {
+            throw new Error('File picker response missing its fields');
+        }
+        if (!picked.selected) {
+            this.renderModalContent();
+            return;
+        }
+        const chosen = picked.backups[0];
+        this.updateModalState({
+            backups: backupsWithChosenFile(this.getModalState().backups, chosen),
+            chosenFilePath: picked.file_path,
+            selectedBackupId: chosen.backup_id,
+            targetNamespaceText: chosen.namespace,
+            confirming: false,
+            preflight: null,
+            importLaunchProfile: null,
+            overwriteConfirmText: '',
+            targetPassword: '',
+        });
+        this.renderModalContent();
     }
 
     _buildRestoreBasePayload(selectedBackup, targetNamespace) {

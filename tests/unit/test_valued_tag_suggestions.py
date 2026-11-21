@@ -17,7 +17,7 @@ def _empty_bar(note_id: str) -> list[str]:
     written = store.get_note(note_id).tags.split()
     return [suggestion.tag for suggestion in suggest_tags_with_reasons_for_note(
         note_id=note_id, anchors=written, explicit_tags=written, prefix="",
-        content_html=store.get_note(note_id).content, limit=_LIMIT,
+        content_html=store.get_note(note_id).content, limit=_LIMIT, search="",
     )]
 
 
@@ -25,7 +25,7 @@ def _typed(prefix: str, note_id: str) -> list[str]:
     written = store.get_note(note_id).tags.split()
     return [suggestion.tag for suggestion in suggest_tags_with_reasons_for_note(
         note_id=note_id, anchors=written, explicit_tags=[*written, prefix], prefix=prefix,
-        content_html=store.get_note(note_id).content, limit=_LIMIT,
+        content_html=store.get_note(note_id).content, limit=_LIMIT, search="",
     )]
 
 

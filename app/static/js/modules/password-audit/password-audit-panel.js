@@ -13,6 +13,7 @@ import { openReferenceInNewTab } from '../mode-manager/events/keyboard-events.js
 import { CommandGate } from '../mode-manager/services/command-gate-service.js';
 import { onNotesChanged } from '../notes-change-signal.js';
 import { WEAK_BELOW_USUAL, WEAK_THRESHOLDS } from './weak-thresholds.js';
+import { auditSummaryText } from './audit-summary-text.js';
 
 const PANEL_ID = 'password-audit-panel';
 const GROUPS = [
@@ -98,14 +99,6 @@ function replacingHtml(key) {
             </div>`;
 }
 
-function summaryText(result) {
-    if (result === null) return 'Checking…';
-    const parts = GROUPS.filter(([group]) => group !== 'replaced').map(([group, label]) => `${result.summary[group]} ${label.toLowerCase()}`);
-    let text = `${result.passwordCount} passwords: ${parts.join(', ')}`;
-    if (result.leakCheck === 'unavailable') text += ' (leak check unavailable)';
-    return text;
-}
-
 // A password in more than one group (reused and weak) shows its replacing once, in the first.
 function rowHtml(row, shownReplacing) {
     const key = rowKey(row);
@@ -177,7 +170,7 @@ function focusedControlSelector(groups) {
 
 function render() {
     const panel = state.element;
-    panel.querySelector('.password-audit-summary').textContent = summaryText(state.result);
+    panel.querySelector('.password-audit-summary').textContent = auditSummaryText(state.result);
     panel.querySelector('.password-audit-threshold').innerHTML = thresholdHtml();
     panel.querySelector('.password-audit-leaks input').checked = state.checkLeaks;
     const groups = panel.querySelector('.password-audit-groups');

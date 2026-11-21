@@ -23,12 +23,17 @@ from app.services.content_formatting import render_standalone_link_title_html
 from app.services.content_formatting import showing_sites_above
 from app.services.content_formatting import sites_linked_in
 from app.services.content_formatting import sites_shown_above
-from app.services.file_view import NO_VIEW, VIEW_EMAIL, text_file_badge, view_kind_of
+from app.services.file_view import (
+    NO_VIEW, PREVIEW_CODE, PREVIEW_DATA, PREVIEW_TEXT, STATUS_READY, VIEW_EMAIL, build_file_view, preview_kind_of,
+    text_file_badge, view_kind_of,
+)
+from app.services.file_registry import file_registry
+from app.security.rendered_html import sanitize_rendered_html
 from app.services.email_cards import email_card_name
 from app.services.email_files import email_badge, is_email_file
 from app.services.inline_image_occurrences import annotate_inline_image_occurrences
 from app.services.subtree_stats import render_subtree_stats_footer
-from app.services.note_gallery import collect_gallery_items, gallery_kinds, render_gallery
+from app.services.note_gallery import every_note_shown, collect_gallery_items, gallery_kinds, render_gallery
 from app.services.search_links import SearchLink, parse_search_link, render_search_link
 from app.services.search_embeds import search_runner
 from app.services.input_errors import InputRejected
@@ -45,6 +50,10 @@ _HTML_TOKEN_SPLIT_RE = re.compile(r"(<[^>]+>)")
 _EMBED_ARROW_STATES = {True: ("false", "Expand note"), False: ("true", "Collapse note")}
 # An embedded note's classes, by whether it is the embed's root.
 _EMBED_NODE_CLASSES = {True: "note-embed-node note-embed-root", False: "note-embed-node"}
+# An embedded note showing a gallery (@gallery with pictures under it).
+_EMBED_GALLERY_CLASS = "note-embed-gallery"
+# The first line of a folded gallery inside an embed, above its row of pictures.
+_EMBED_GALLERY_FIRST_LINE_CLASS = "note-embed-gallery-first-line"
 # Editors write "first line<div>second line</div>", so a block's opening tag also ends a line.
 _FIRST_LINE_BOUNDARY_RE = re.compile(
     r"(?i)<br\s*/?>|</?(?:div|p|li|h[1-6]|pre|blockquote|ul|ol|table|tr|td|th|section|article|header|footer)\b[^>]*>\s*|\n"
@@ -361,7 +370,7 @@ def render_note_content_with_embeds(
     return (
         rendered_content
         + render_subtree_stats_footer(note_id=note_id, tags=tags, context=context)
-        + _render_note_gallery(note_id=note_id, tags=tags, context=context, static_export=static_export)
+        + _render_note_gallery(note_id=note_id, tags=tags, context=context, static_export=static_export, is_embedded=False)
     )
 
 
@@ -395,21 +404,91 @@ def _render_pdf_tile(*, record: object, file_id: str, static_export: bool) -> st
     )
 
 
-def _render_note_gallery(*, note_id: str, tags: str, context: EmbedRenderContext, static_export: bool) -> str:
+# The kinds of file a gallery shows by a picture of its own.
+_TILE_PICTURE_KINDS = frozenset({"image", "excalidraw"})
+# The kinds a tile draws the top of, as the viewer draws the whole file: Markdown and other text,
+# code and data (file_view.py). A Word document or a web page is read whole to be drawn: its
+# tile is its badge and name.
+_TILE_DOCUMENT_KINDS = frozenset({PREVIEW_TEXT, PREVIEW_CODE, PREVIEW_DATA})
+# How much of a file's start a tile draws: about a page, cut after its last whole line.
+_TILE_DOCUMENT_BYTES = 6000
+_LINE_END = b"\n"
+# A tile is a button: nothing in the drawn document may be one (a browser ends the tile at a
+# button inside it, and what follows spills out as tiles of its own).
+_BUTTON_TAG_RE = re.compile(r"<(/?)button\b", re.IGNORECASE)
+_AS_SPAN = r"<\1span"
+
+
+def _render_file_tile(record: object) -> str:
+    """A file with no picture of its own, in a gallery: its badge and name."""
+    title = getattr(record, "title")
+    original_filename = getattr(record, "original_filename")
+    thumbnail_kind = getattr(record, "thumbnail_kind")
+    assert all(isinstance(value, str) and value != "" for value in (title, original_filename, thumbnail_kind))
+    badge = _format_file_badge(thumbnail_kind=thumbnail_kind, original_filename=original_filename)
+    return (
+        '<span class="meta-gallery-file">'
+        f'<span class="note-file-reference-badge">{html.escape(badge)}</span>'
+        f'<span class="meta-gallery-file-name">{html.escape(title)}</span>'
+        "</span>"
+    )
+
+
+def _render_document_tile(*, record: object, file_id: str, context: EmbedRenderContext) -> str:
+    """A Markdown, text, code or data file in a gallery: the top of the file drawn as the viewer
+    draws it, shrunk to a page (the maintainer, 2026-11-18: a Markdown file's card, with its Open
+    and Download, took three tiles). Any other file, or one too large to read: its badge and name."""
+    original_filename = getattr(record, "original_filename")
+    mime_type = getattr(record, "mime_type")
+    assert isinstance(original_filename, str) and isinstance(mime_type, str)
+    is_drawn = preview_kind_of(original_filename) in _TILE_DOCUMENT_KINDS and not is_email_file(
+        mime_type=mime_type, original_filename=original_filename,
+    )
+    if not is_drawn:
+        return _render_file_tile(record)
+    stored = file_registry.read_stored_file(file_id)
+    if stored is None:
+        return _render_file_tile(record)
+    start = getattr(stored, "content_bytes")[:_TILE_DOCUMENT_BYTES]
+    if len(start) == _TILE_DOCUMENT_BYTES and _LINE_END in start:
+        start = start[: start.rindex(_LINE_END)]
+    view = build_file_view(original_filename=original_filename, content_bytes=start)
+    if view.status != STATUS_READY:
+        return _render_file_tile(record)
+    drawn = sanitize_rendered_html(render_note_content_with_embeds(
+        note_id=file_id, content_html=view.content_html, tags=view.render_tag, context=context,
+        static_export=False, credentials=CredentialDisplay.HIDDEN,
+    ))
+    return f'<span class="meta-gallery-document" aria-hidden="true">{_BUTTON_TAG_RE.sub(_AS_SPAN, drawn)}</span>'
+
+
+def _render_note_gallery(*, note_id: str, tags: str, context: EmbedRenderContext, static_export: bool, is_embedded: bool) -> str:
     kinds = gallery_kinds(tags)
     if kinds is None:
         return ""
+    # In the list a search narrows the gallery to the notes it shows; an embed shows its source
+    # whole whatever the search, so its gallery holds every picture, as its outline holds every
+    # child (the maintainer, 2026-11-19: an embedded gallery showed an outline, never its grid).
+    is_shown = context.is_shown_in_gallery
+    if is_embedded:
+        is_shown = every_note_shown
     items = collect_gallery_items(
-        note_id=note_id, kinds=kinds, context=context,
+        note_id=note_id, kinds=kinds, context=context, is_shown=is_shown,
         file_ids_in=lambda content_html: [(token.start, token.note_id) for token in collect_active_reference_tokens(content_html)],
         first_line_of=extract_collapsed_preview_source_html,
     )
 
     def tile_body(file_id: str) -> str:
         record = context.get_file(file_id)
-        if getattr(record, "thumbnail_kind") == _PDF_THUMBNAIL_KIND:
+        thumbnail_kind = getattr(record, "thumbnail_kind")
+        if thumbnail_kind == _PDF_THUMBNAIL_KIND:
             return _render_pdf_tile(record=record, file_id=file_id, static_export=static_export)
-        return _render_file_embed_body(record=record, reference_note_id=file_id, static_export=static_export)
+        if thumbnail_kind in _TILE_PICTURE_KINDS:
+            return _render_file_embed_body(record=record, reference_note_id=file_id, static_export=static_export)
+        # Any other file's card holds buttons (Open, Download), which a tile cannot.
+        if static_export:
+            return _render_file_tile(record)
+        return _render_document_tile(record=record, file_id=file_id, context=context)
 
     def view_kind(file_id: str) -> str:
         return view_kind_of(getattr(context.get_file(file_id), "original_filename"))
@@ -504,6 +583,7 @@ def render_collapsed_note_content_with_embeds(
     context: EmbedRenderContext,
     static_export: bool,
     credentials: CredentialDisplay,
+    is_embedded: bool,
 ) -> str:
     preview_source_html = _first_shown_line(extract_collapsed_preview_source_html(content_html), context=context)
     if has_scoped_footnotes(tags) or _has_markdown_footnotes(content_html=content_html, tags=tags):
@@ -524,7 +604,14 @@ def render_collapsed_note_content_with_embeds(
         is_held=sole_embed_token(content_html) is not None,
     )
     # A folded gallery shows one row of its pictures under its first line (main.css).
-    return rendered_first_line + _render_note_gallery(note_id=note_id, tags=tags, context=context, static_export=static_export)
+    gallery_html = _render_note_gallery(
+        note_id=note_id, tags=tags, context=context, static_export=static_export, is_embedded=is_embedded,
+    )
+    if is_embedded and gallery_html != "":
+        # A folded note in an embed is cut to one line by its box (main.css); with a row of
+        # pictures under it, the line alone is cut.
+        return f'<div class="{_EMBED_GALLERY_FIRST_LINE_CLASS}">{rendered_first_line}</div>{gallery_html}'
+    return rendered_first_line + gallery_html
 
 
 def _shown_note_embeds(preview_source_html: str, context: EmbedRenderContext) -> List[ReferenceToken]:
@@ -891,7 +978,7 @@ def _render_search_embed(
             record = context.get_note(note_id)
             first_line = render_collapsed_note_content_with_embeds(
                 note_id=note_id, content_html=getattr(record, "content"), tags=getattr(record, "tags"),
-                context=context, static_export=False, credentials=credentials,
+                context=context, static_export=False, credentials=credentials, is_embedded=False,
             )
             rows.append(
                 f'<div class="note-search-embed-result" data-result-note-id="{html.escape(note_id, quote=True)}">'
@@ -1701,6 +1788,11 @@ def _render_embedded_note_node(
     if shows_note_embed(content_html=record_content, context=context):
         # A note in the embed that is itself only a reference: a deeper embed.
         classes = f"{classes} note-embed-holds-embed"
+    # Its gallery, as the list draws it: under its text, its children hidden while the grid
+    # shows (main.css, gallery-view-service.js); folded, one row under its first line.
+    gallery_html = _render_note_gallery(note_id=note_id, tags=record_tags, context=context, static_export=static_export, is_embedded=True)
+    if gallery_html != "":
+        classes = f"{classes} {_EMBED_GALLERY_CLASS}"
     child_ids = context.get_children(note_id)
     assert static_export or not context.static_collapse_arrows, "only a static export folds in the file"
     # Collapse is shared: an embedded note shows the state saved for it, as in
@@ -1740,6 +1832,7 @@ def _render_embedded_note_node(
             context=context,
             static_export=static_export,
             credentials=credentials,
+            is_embedded=True,
         )
     else:
         rendered_content = _render_expanded_embedded_content(
@@ -1750,7 +1843,7 @@ def _render_embedded_note_node(
             ancestry=ancestry,
             static_export=static_export,
             credentials=credentials,
-        )
+        ) + gallery_html
         # Its children are shown under it: its sites are shown above them.
         with showing_sites_above(sites_shown_above() | sites_linked_in(record_content)):
             children_html = _render_embedded_children(
@@ -1801,6 +1894,7 @@ def _render_foldable_static_embedded_note_node(
         context=context,
         static_export=True,
         credentials=credentials,
+        is_embedded=True,
     )
     expanded_content = _render_expanded_embedded_content(
         note_id=note_id,
@@ -1810,7 +1904,7 @@ def _render_foldable_static_embedded_note_node(
         ancestry=ancestry,
         static_export=True,
         credentials=credentials,
-    )
+    ) + _render_note_gallery(note_id=note_id, tags=record_tags, context=context, static_export=True, is_embedded=True)
     with showing_sites_above(sites_shown_above() | sites_linked_in(annotated_content)):
         children_html = _render_embedded_children(
             child_ids=child_ids,

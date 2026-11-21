@@ -20,7 +20,7 @@ import unicodedata
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path, PurePosixPath
 from threading import Lock
 from typing import List, Tuple
@@ -37,6 +37,11 @@ _UPLOAD_ID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0
 # A path segment that would leave the folder, or say nothing.
 _NOT_A_NAME = {"", ".", ".."}
 _DRIVE_RE = re.compile(r"^[A-Za-z]:")
+# When a file was last changed, as the browser sends it (File.lastModified): milliseconds since
+# 1970, before it for an older file. Sixteen digits reach past the year 9999, the last a date holds.
+_MODIFIED_MS_RE = re.compile(r"-?\d{1,16}")
+_EPOCH = datetime.fromtimestamp(0, tz=timezone.utc)
+_FURTHEST_MS = (datetime.max.replace(tzinfo=timezone.utc) - _EPOCH) // timedelta(milliseconds=1)
 
 
 def _holding_root() -> Path:
@@ -46,7 +51,8 @@ def _holding_root() -> Path:
 @dataclass(frozen=True, slots=True)
 class _HeldFile:
     stored: StoredBlob
-    received_at: datetime
+    # When the file was last changed on the computer it was dropped from.
+    modified_at: datetime
 
 
 class _HeldUploads:
@@ -104,6 +110,14 @@ def relative_path(path: object) -> PurePosixPath:
     return PurePosixPath(unicodedata.normalize("NFC", path))
 
 
+def modified_moment(modified_ms: object) -> datetime:
+    """When a dropped file was last changed on the computer it came from, from the browser's
+    milliseconds; refused when it is no such number."""
+    if not isinstance(modified_ms, str) or _MODIFIED_MS_RE.fullmatch(modified_ms) is None or abs(int(modified_ms)) > _FURTHEST_MS:
+        raise InputRejected("That file came without the date it was last changed.")
+    return _EPOCH + timedelta(milliseconds=int(modified_ms))
+
+
 def listed_files(listing: List[List[object]]) -> List[FolderFile]:
     """The browser's list of a dropped folder's files ([path, size] each) as the checklist
     takes them, in path order (case ignored), as folder_files gives a folder on disk."""
@@ -142,9 +156,11 @@ class IncomingFile:
         self._upload_id = upload_id
         self._writer = writer
         self.path: PurePosixPath | None = None
+        self._modified_at: datetime | None = None
 
-    def open(self, path: str) -> "IncomingFile":
-        """Say where it goes in the folder; never over another."""
+    def open(self, path: str, modified_at: datetime) -> "IncomingFile":
+        """Say where it goes in the folder, never over another, and when it was last changed."""
+        self._modified_at = modified_at
         relative = relative_path(path)
         if _held.has_file(self._upload_id, relative):
             raise InputRejected(f"{path} was sent already.")
@@ -155,9 +171,9 @@ class IncomingFile:
         self._writer.write(content)
 
     def finish(self) -> None:
-        assert self.path is not None, "a file is opened at its path before it is finished"
+        assert self.path is not None and self._modified_at is not None, "a file is opened at its path before it is finished"
         stored = self._writer.finish()
-        if not _held.add(self._upload_id, self.path, _HeldFile(stored=stored, received_at=datetime.now(timezone.utc))):
+        if not _held.add(self._upload_id, self.path, _HeldFile(stored=stored, modified_at=self._modified_at)):
             raise InputRejected(f"{self.path} was sent already.")
 
 
@@ -216,8 +232,9 @@ class HeldFolder:
         return self._files[relative].stored.seal.real_size
 
     def file_times(self, relative: PurePosixPath) -> tuple[datetime, datetime]:
-        received_at = self._files[relative].received_at
-        return received_at, received_at
+        # A browser tells a page when a file was last changed, never when it was made.
+        modified_at = self._files[relative].modified_at
+        return modified_at, modified_at
 
 
 def open_import_folder(folder: Path) -> ImportFolder:

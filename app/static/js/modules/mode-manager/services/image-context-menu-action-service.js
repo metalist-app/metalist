@@ -454,13 +454,14 @@ function overlayButton(className, label, text) {
 
 // A gallery's pictures full screen, as Zoom Image shows one (docs/future-plans/gallery.md): ‹ ›
 // and the arrow keys move through them, stopping at the ends; Go to note shows the picture's note.
-// pictures: [{ src, alt, noteId }].
-export function zoomGallery({ pictures, index, onGoToNote, onOpen }) {
+// pictures: [{ src, alt, noteId }]. canGoToNote: whether Go to note is offered (not from an embed
+// whose source the list doesn't show).
+export function zoomGallery({ pictures, index, canGoToNote, onGoToNote, onOpen }) {
     if (!Array.isArray(pictures) || !Number.isInteger(index) || index < 0 || index >= pictures.length) {
         throw new Error('zoomGallery requires the pictures and which one to show');
     }
-    if (typeof onGoToNote !== 'function' || typeof onOpen !== 'function') {
-        throw new Error('zoomGallery requires onGoToNote and onOpen');
+    if (typeof canGoToNote !== 'boolean' || typeof onGoToNote !== 'function' || typeof onOpen !== 'function') {
+        throw new Error('zoomGallery requires canGoToNote, onGoToNote and onOpen');
     }
     closeActiveZoomOverlay();
     const overlay = buildZoomOverlay(pictures[index].src, pictures[index].alt);
@@ -469,6 +470,7 @@ export function zoomGallery({ pictures, index, onGoToNote, onOpen }) {
     const previous = overlayButton('image-zoom-step image-zoom-previous', 'Previous picture', '‹');
     const next = overlayButton('image-zoom-step image-zoom-next', 'Next picture', '›');
     const goToNote = overlayButton('image-zoom-go-to-note', 'Go to note', 'Go to note');
+    goToNote.hidden = !canGoToNote;
     // A PDF shows its first page; Open shows the whole PDF in the file viewer.
     const open = overlayButton('image-zoom-open', 'Open', 'Open');
     const actions = document.createElement('div');
