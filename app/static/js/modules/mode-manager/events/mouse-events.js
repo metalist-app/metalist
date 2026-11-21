@@ -2282,13 +2282,20 @@ function showGalleryFullScreen(clickedTile) {
         void openDiagramEditor(clickedTile.dataset.fileRefId, clickedTile.dataset.galleryNoteId);
         return;
     }
-    // A PDF whose first page isn't drawn (or can't be) shows its badge: a click opens it.
-    if (index === -1 && clickedTile.querySelector('.meta-gallery-file') !== null) {
+    // A click on a tile opens what it shows (the maintainer, 2026-11-21: "I click on it and
+    // nothing happens"). A picture opens full screen, below. Every other file opens in the
+    // viewer: a PDF, whether its tile shows its first page, is still loading it or shows its
+    // badge; a Markdown, text, code or data file drawn as a small page; a file shown by its
+    // badge; and an image whose picture has not loaded yet.
+    const isPdf = clickedTile.querySelector('[data-picture-source="first-page"]') !== null;
+    const hasFile = clickedTile.hasAttribute('data-file-ref-id');
+    if (hasFile && (isPdf || index === -1)) {
         void CommandGate.run('mouse.open_file_viewer', async () => {
             await openFileViewer(clickedTile.dataset.fileRefId);
         });
         return;
     }
+    // A picture written in the note's text (no file) that has not loaded has nothing to show yet.
     if (index === -1) {
         return;
     }
