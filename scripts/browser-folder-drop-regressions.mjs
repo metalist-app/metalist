@@ -333,6 +333,135 @@ async function checkWhereEachDropEnds(page, created, contexts) {
   assertItsOwnSearch(shown, before, 'Droppedsecond', "dropped in an earlier import's search");
 }
 
+// --- Importing a folder again, and Changed since (import-export-launch.md §5, "Importing again") ---
+
+const AGAIN_FOLDER = 'Droppedagain';
+// A file last changed long before the day Changed since names, and that day.
+const LONG_AGO = Date.UTC(2025, 10, 1, 12);
+const CHANGED_SINCE = '2026-01-01';
+const NOTHING_TO_BRING_IN = 'Every file is as it was when you imported it.';
+
+// The folder dropped alone and walked to its Summary. files: [path, text, last changed (ms)].
+// changedSince: the day typed on the Folder screen, '' to leave it empty. Returns what the
+// checklist offered and what the Summary says of an earlier import ('' when it says nothing).
+async function walkToSummary(page, {files, changedSince}) {
+  await page.evaluate(async ({name, files}) => {
+    const {CommandPalette} = await import('/static/js/modules/command-palette/command-palette-controller.js');
+    const file = ([path, text, lastModified]) => ({
+      path, size: new Blob([text]).size, file: new File([text], path.split('/').pop(), {lastModified}),
+    });
+    await CommandPalette.openImportWizardWithDroppedFolder({name, files: files.map(file)}, '');
+  }, {name: AGAIN_FOLDER, files});
+  await waitForStep(page, 'What are you importing?');
+  await next(page);
+  await waitForStep(page, 'Choose the folder');
+  if (changedSince !== '') {
+    await page.$eval('#import-wizard [data-wizard-changed-since]', (node, day) => {
+      node.value = day;
+      node.dispatchEvent(new Event('change', {bubbles: true}));
+    }, changedSince);
+  }
+  // The folder's name is checked before Next goes on.
+  await page.waitForFunction(() => !document.querySelector('#import-wizard .wizard-footer .wizard-next').classList.contains('is-incomplete'),
+    {timeout: WIZARD_STEP_TIMEOUT_MS});
+  await next(page);
+  await waitForStep(page, 'What should be imported?');
+  await page.waitForSelector('#import-wizard .wizard-kinds');
+  const offered = await page.$$eval('#import-wizard .wizard-kind-count', counts => counts.map(count => count.textContent).join(', '));
+  for (;;) {
+    const title = await stepTitle(page);
+    if (title === 'Ready to import') break;
+    // Copying goes on by itself.
+    if (title !== 'Copying your files') await next(page);
+    await page.waitForFunction(previous => {
+      const node = document.querySelector('#import-wizard .wizard-screen:not(.is-leaving) .wizard-screen-title');
+      return node !== null && node.textContent !== previous;
+    }, {timeout: WIZARD_STEP_TIMEOUT_MS}, title);
+    await pause(SETTLE_MS);
+  }
+  await page.waitForSelector('#import-wizard .wizard-preview-counts', {timeout: WIZARD_STEP_TIMEOUT_MS});
+  await pause(SETTLE_MS);
+  const before = await page.$eval('#import-wizard .wizard-again', node => node.innerText.replace(/\s+/g, ' ').trim());
+  return {offered, before};
+}
+
+async function importFromSummary(page) {
+  await next(page);
+  await page.waitForFunction(() => document.getElementById('import-wizard') === null
+    || getComputedStyle(document.getElementById('import-wizard')).display === 'none', {timeout: WIZARD_STEP_TIMEOUT_MS});
+  await idle(page);
+  await pause(SETTLE_MS);
+}
+
+async function chooseOnSummary(page, value) {
+  await page.click(`#import-wizard input[name="wizard-earlier-notes"][value="${value}"]`);
+  await idle(page);
+  await pause(SETTLE_MS);
+}
+
+// The notes of the folder, as the list shows them with the folder chosen: [id, text] each.
+async function notesOfAgainFolder(page) {
+  await chooseTreeFolder(page, `${AGAIN_FOLDER}/`);
+  await pause(SETTLE_MS);
+  const shown = await shownNow(page);
+  return shown.noteIds.map((id, index) => [id, shown.noteTexts[index]]);
+}
+
+async function checkAFolderDroppedAgain(page, created, contexts) {
+  const contextsBefore = (await shownNow(page)).contextCount;
+  const now = Date.now();
+  // First: only the file changed since the day comes in, and nothing came in before.
+  const first = await walkToSummary(page, {
+    files: [['alpha.md', 'Alpha one\n', now], ['beta.md', 'Beta one\n', LONG_AGO]], changedSince: CHANGED_SINCE,
+  });
+  assert.deepEqual(first, {offered: '1 file', before: ''}, 'Changed since: one of the two files is offered, and nothing came in before');
+  await importFromSummary(page);
+  const afterFirst = await notesOfAgainFolder(page);
+  created.push(...afterFirst.map(([id]) => id));
+  assert.equal(afterFirst.length, 1, 'Changed since: one file came in');
+  assert.match(afterFirst[0][1], /Alpha one/, 'Changed since: the file changed since the day');
+  const [alphaId] = afterFirst[0];
+
+  // Again, alpha changed: the Summary says so, Keep both chosen; Replace puts alpha's new notes
+  // in its old note's place and brings in beta, which never came in.
+  const second = await walkToSummary(page, {
+    files: [['alpha.md', 'Alpha two\n', now], ['beta.md', 'Beta one\n', LONG_AGO]], changedSince: '',
+  });
+  assert.equal(second.offered, '2 files', 'no day: both files are offered');
+  assert.match(second.before, new RegExp(`^${AGAIN_FOLDER} was imported before \\(.+\\)\\. 1 file changed since\\. Keep both Replace the old notes$`),
+    'the Summary says the folder came in before and asks');
+  assert.equal(await page.$eval('#import-wizard input[name="wizard-earlier-notes"]:checked', node => node.value), 'keep',
+    'Keep both is chosen at first');
+  await chooseOnSummary(page, 'replace');
+  await importFromSummary(page);
+  const afterSecond = await notesOfAgainFolder(page);
+  created.push(...afterSecond.map(([id]) => id).filter(id => !created.includes(id)));
+  assert.deepEqual(afterSecond.map(([, text]) => /Alpha two/.test(text) ? 'alpha two' : /Beta one/.test(text) ? 'beta' : text).toSorted(),
+    ['alpha two', 'beta'], 'Replace: alpha as it is now, and beta, each once');
+  assert.equal(afterSecond.find(([, text]) => /Alpha two/.test(text))[0], alphaId, 'Replace: alpha keeps its note');
+
+  // Again with nothing changed, Replace has nothing to bring in: said so, and Import waits.
+  const third = await walkToSummary(page, {
+    files: [['alpha.md', 'Alpha two\n', now], ['beta.md', 'Beta one\n', LONG_AGO]], changedSince: '',
+  });
+  assert.match(third.before, /No file changed since\./, 'nothing changed since');
+  await chooseOnSummary(page, 'replace');
+  assert.deepEqual(await page.evaluate(() => ({
+    said: document.querySelector('#import-wizard .wizard-preview-counts').innerText.trim(),
+    isWaiting: document.querySelector('#import-wizard .wizard-footer .wizard-next').classList.contains('is-incomplete'),
+  })), {said: NOTHING_TO_BRING_IN, isWaiting: true}, 'Replace with nothing changed');
+  await page.keyboard.press('Escape');
+  await idle(page);
+  await pause(SETTLE_MS);
+  assert.equal((await notesOfAgainFolder(page)).length, afterSecond.length, 'nothing came in');
+  // The search contexts the imports opened go with the suite's others.
+  const order = await page.evaluate(async () => {
+    const {ModeContextInstance: mode} = await import('/static/js/modules/mode-manager/mode-context.js');
+    return [...mode.tabOrder];
+  });
+  contexts.push(...order.slice(contextsBefore).filter(tabId => !contexts.includes(tabId)));
+}
+
 export async function checkFolderDrops(page) {
   const folderNoteId = await page.evaluate(async folder => {
     const {NotesAPI} = await import('/static/js/modules/api-client.js');
@@ -356,6 +485,7 @@ export async function checkFolderDrops(page) {
     await checkFilesOnAFolderWhileEditing(page, droppedOnFolderId);
     created.push(...await checkFolderOnAFolder(page));
     await checkWhereEachDropEnds(page, created, contexts);
+    await checkAFolderDroppedAgain(page, created, contexts);
   }, async () => {
     // The search contexts the drops opened go with their −, as a person deletes them: deleted behind
     // the page's back, its next save of the scroll would name them and be refused.
