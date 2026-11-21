@@ -677,15 +677,17 @@ export const NotesAPI = {
         return this._apiCall(CONFIG.API.IMPORT.UPLOADS, { method: 'POST', body: JSON.stringify({}) });
     },
 
-    // One ticked file, at its path in the dropped folder.
+    // One ticked file, at its path in the dropped folder, with the date it was last changed:
+    // its notes are dated by it, and "Changed since" reads it.
     async uploadImportFile(uploadId, path, file) {
-        if (typeof uploadId !== 'string' || typeof path !== 'string' || !(file instanceof Blob)) {
+        if (typeof uploadId !== 'string' || typeof path !== 'string' || !(file instanceof File)) {
             throw new Error('NotesAPI.uploadImportFile requires the upload, the path and the file');
         }
         // A few at a time, as previews loading meanwhile are (file-transfer-slots.js).
         const { response, answer } = await inTransferSlot(async () => {
             const formData = new FormData();
             formData.append('path', path);
+            formData.append('modified', String(file.lastModified));
             formData.append('file', file);
             const sent = await fetch(CONFIG.API.IMPORT.UPLOAD_FILE(uploadId), {
                 method: 'POST', headers: buildAuthHeaders(false), body: formData,

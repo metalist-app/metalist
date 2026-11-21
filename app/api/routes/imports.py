@@ -200,7 +200,8 @@ def start_import_upload(request: Request) -> dict[str, object]:
 @transactional_route
 async def upload_import_file(request: Request, upload_id: str) -> dict[str, object]:
     """One ticked file of a dropped folder, at its path in the folder, written as it arrives.
-    The form's `path` comes before its file."""
+    The form's `path` and `modified` (when the file was last changed, the browser's
+    milliseconds) come before its file."""
     require_request_auth_token(request)
     declared_bytes = declared_body_bytes(request)
     if declared_bytes is not None:
@@ -209,7 +210,9 @@ async def upload_import_file(request: Request, upload_id: str) -> dict[str, obje
     def open_at_its_path(_part: FilePart, fields: Mapping[str, str]) -> import_uploads.IncomingFile:
         if "path" not in fields or not 0 < len(fields["path"]) <= _MAX_FOLDER_PATH_LENGTH:
             raise InputRejected("That file came without its path in the folder.")
-        return incoming.open(fields["path"])
+        if "modified" not in fields:
+            raise InputRejected("That file came without the date it was last changed.")
+        return incoming.open(fields["path"], import_uploads.modified_moment(fields["modified"]))
 
     with full_disk_is_rejected(), import_uploads.receive_file(upload_id) as incoming:
         _file_part, fields = await receive_upload(request, open_sink=open_at_its_path)
