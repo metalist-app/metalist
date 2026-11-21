@@ -25,6 +25,7 @@ HELP_TOPICS = {
     'ai': ('AI and tag proposals', 'OpenAI settings, context limits, long chats (summaries of earlier turns, Summarize Now, the History % meter), prompts/skills, history export, and AI tag proposals: generation, acceptance, rejection/removal and bulk undo limits. This topic alone covers proposal workflow explanations.'),
     'privacy': ('Privacy and security', 'Cloud disclosure, gray notes when hovering chat, password exclusion, encryption and credentials.'),
     'data': ('Vaults and backups', 'Vaults, backup/restore, HTML export, ports and updates.'),
+    'why': ('Why MetaList works this way', 'The reasons behind MetaList\'s design: why it does or does not do something (what stays still on screen, dialogs, search contexts, tags, links and files, import, backups, passwords, AI), and features that were tried and removed. How to use a feature belongs to its own topic.'),
     'dictation': ('Dictation (speech to text)', 'Pasting dictated text from speech-to-text tools such as Superwhisper into the search bar, tag bar or a note: how words become tags, spoken dash/quote/or/not, "at to do" meta tags, the "start tags" phrase in notes, undo, and Dictation Settings.'),
 }
 
