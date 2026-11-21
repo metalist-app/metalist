@@ -16,7 +16,7 @@ from datetime import datetime, timezone
 from functools import partial
 from pathlib import Path, PurePosixPath
 from types import SimpleNamespace
-from typing import Dict, List, Tuple
+from typing import Dict, FrozenSet, List, Tuple
 
 from app.services.background_work import IMPORT_KEY, WorkProgress, background_work
 from app.services.file_storage import create_file, create_file_from_pieces
@@ -61,7 +61,7 @@ from app.upload_limits import MAX_IN_MEMORY_FILE_BYTES
 from app.usecases.base import QueryCommand
 from app.usecases.delete_subtree import apply_delete_subtree, apply_restore_records
 from app.usecases.import_again import (
-    KEEP_BOTH,
+    NO_NOTE,
     ImportedBefore,
     changed_since_day,
     is_changed_since,
@@ -140,7 +140,7 @@ class CmdImportObsidianVault(QueryCommand):
         is_new_folder = is_new_import_folder(plan.folder_prefix)
         before = meet_earlier_import(
             folder_name=self.folder_name, prefix_folder=plan.folder_prefix, fingerprints=plan.fingerprints,
-            choice=self.earlier_notes,
+            choice=self.earlier_notes, left_out=plan.left_out,
         )
         if nothing_to_bring_in(before, list(plan.fingerprints)):
             raise InputRejected(NOTHING_TO_BRING_IN)
@@ -189,6 +189,8 @@ class _ImportPlan:
     kept_paths: List[PurePosixPath]
     # Each file that gets a root note, by path: how to fingerprint it (import_origins.py).
     fingerprints: Dict[str, Callable[[], str]]
+    # The Markdown files Changed since leaves out, by path: planned, for the links to them.
+    left_out: FrozenSet[str]
 
 
 # Said when a folder imported again has nothing new and its old notes are not to be doubled.
@@ -235,7 +237,7 @@ def _plan_import(
             vault_file, uses_strict_line_breaks=vault.uses_strict_line_breaks, source_tag=source_tag,
             split_mode=split_mode, content_format=content_format, folder_prefix=prefix,
         )
-        for vault_file in markdown_files
+        for vault_file in vault.markdown_files
     ]
     kept_paths = [
         path for path in vault.other_files
@@ -248,6 +250,7 @@ def _plan_import(
     return _ImportPlan(
         source=source, folder=import_folder, vault=vault, planned=planned, source_tag=source_tag, folder_prefix=prefix,
         kept_paths=kept_paths, fingerprints=fingerprints,
+        left_out=frozenset(str(vault_file.path) for vault_file in vault.markdown_files) - set(fingerprints),
     )
 
 
@@ -263,10 +266,36 @@ def _file_fingerprint(folder: ImportFolder, path: PurePosixPath) -> str:
 def _with_earlier_root_ids(planned: List[PlannedNote], before: ImportedBefore) -> List[PlannedNote]:
     """Each file's root note under the id of its old note when that one stays or is replaced:
     links to it, from this import's notes and from older ones, lead to the same note."""
+
     return [
         replace(note, root=replace(note.root, note_id=before.root_id(note.source_path, note.root.note_id)))
         for note in planned
     ]
+
+
+def _standing_notes(planned: List[PlannedNote], before: ImportedBefore) -> Dict[str, str]:
+    """For every note of a file this import does not write (left out by Changed since, or as
+    it was imported): the root note that file has in the vault, NO_NOTE when it never came in.
+    A link to any of them leads there, or stays as written: never to a note that is not written."""
+    standing: Dict[str, str] = {}
+    for note in planned:
+        if before.is_written(note.source_path):
+            continue
+        root_id = before.standing_root_id(note.source_path)
+        waiting = [note.root]
+        while waiting:
+            node = waiting.pop()
+            standing[node.note_id] = root_id
+            waiting.extend(node.children)
+    return standing
+
+
+def _stays_as_written(item: "_Resolved", standing: Dict[str, str]) -> bool:
+    """A link the Summary counts as leading nowhere: to no note or file of the folder, or to a
+    note this import does not write and the vault does not have."""
+    if item.note is None:
+        return item.file_path is None
+    return item.note.note_id in standing and standing[item.note.note_id] == NO_NOTE
 
 
 def _write_roots(roots: List[Tuple[str, "WrittenRoot"]], before: ImportedBefore, token: str) -> None:
@@ -340,15 +369,15 @@ class CmdPreviewImport(QueryCommand):
         )
         before = meet_earlier_import(
             folder_name=self.folder_name, prefix_folder=plan.folder_prefix, fingerprints=plan.fingerprints,
-            choice=self.earlier_notes,
+            choice=self.earlier_notes, left_out=plan.left_out,
         )
         # What comes in: not the files that are as they were, when their old notes are replaced.
-        planned = [note for note in plan.planned if not before.is_left(note.source_path)]
+        planned = [note for note in plan.planned if before.is_written(note.source_path)]
         index = VaultIndex(plan.planned, plan.vault.other_files)
         resolved = [
             _resolve(index, reference, from_path=note.source_path) for note in planned for reference in note.links
         ]
-        kept_paths = [path for path in plan.kept_paths if not before.is_left(str(path))]
+        kept_paths = [path for path in plan.kept_paths if before.is_written(str(path))]
         linked_paths = {item.file_path for item in resolved if item.file_path is not None}
         findings = [note.findings for note in planned]
         kept_note_count = len(kept_paths)
@@ -369,7 +398,7 @@ class CmdPreviewImport(QueryCommand):
             "filesWithCommentsCount": sum(1 for finding in findings if finding.has_comments),
             "blockIdCount": sum(finding.block_id_count for finding in findings),
             "calloutCount": sum(finding.callout_count for finding in findings),
-            "missingLinkCount": sum(1 for item in resolved if item.note is None and item.file_path is None),
+            "missingLinkCount": sum(1 for item in resolved if _stays_as_written(item, _standing_notes(plan.planned, before))),
             "unreadableFileCount": sum(1 for entry in plan.vault.skipped if entry.reason == NOT_UTF8_REASON),
             "unusedAttachmentCount": sum(
                 1 for path in plan.vault.other_files if path not in linked_paths and not _is_kept_file(path)
@@ -405,17 +434,18 @@ def _linked(
     and Excalidraw files, which come in linked to or not). A file that is as it was imported,
     its old notes to be replaced, is left: links to it lead to the note it has."""
     index = VaultIndex(planned, vault.other_files)
-    written = [note for note in planned if not before.is_left(note.source_path)]
+    written = [note for note in planned if before.is_written(note.source_path)]
     resolved = {note.source_path: [_resolve(index, reference, from_path=note.source_path) for reference in note.links] for note in written}
-    kept_paths = [path for path in kept_paths if not before.is_left(str(path))]
+    kept_paths = [path for path in kept_paths if before.is_written(str(path))]
     linked_paths = {item.file_path for items in resolved.values() for item in items if item.file_path is not None}
     stored = _store_files(
         folder, sorted({*linked_paths, *kept_paths}, key=_path_key), images=images, token=token, progress=progress,
     )
     file_ids = stored.file_ids
+    standing = _standing_notes(planned, before)
     return _Linked(
         planned=[
-            replace(note, root=_with_links(note.root, _replacements(resolved[note.source_path], file_ids)))
+            replace(note, root=_with_links(note.root, _replacements(resolved[note.source_path], file_ids, standing)))
             for note in written
         ],
         kept=[
@@ -449,22 +479,30 @@ def _reaches(item: _Resolved, file_ids: Dict[PurePosixPath, str]) -> bool:
     return item.file_path is not None and item.file_path in file_ids
 
 
-def _replacements(items: List[_Resolved], file_ids: Dict[PurePosixPath, str]) -> Dict[int, str]:
+def _replacements(items: List[_Resolved], file_ids: Dict[PurePosixPath, str], standing: Dict[str, str]) -> Dict[int, str]:
     """Each link token's HTML: MetaList's reference (`[[UUID]]`, `[[UUID|text]]`, `![[UUID]]`),
-    or the link as written when it reaches nothing."""
+    or the link as written when it reaches nothing. standing (_standing_notes): a note this
+    import does not write is reached at the root note its file has in the vault, as a whole."""
     replacements: Dict[int, str] = {}
     for token_index, item in enumerate(items):
         reference = item.reference
-        if not _reaches(item, file_ids):
+        is_unwritten = item.note is not None and item.note.note_id in standing
+        if not _reaches(item, file_ids) or _stays_as_written(item, standing):
             replacements[token_index] = html.escape(reference.written, quote=False)
             continue
         text = reference.text
         if item.note is not None:
             target_id = item.note.note_id
+            is_whole_note_for_part = item.is_whole_note_for_part
+            if is_unwritten:
+                # A heading or block of a file not written is reached as its file's whole note.
+                if standing[target_id] != target_id:
+                    is_whole_note_for_part = True
+                target_id = standing[target_id]
             if reference.is_embed:
                 # A note's embed shows the note; text there is unused (docs/ui/references.md).
                 text = ""
-            elif text == "" and item.is_whole_note_for_part and reference.heading != "":
+            elif text == "" and is_whole_note_for_part and reference.heading != "":
                 text = _HEADING_LINK_TEXT_FORMAT.format(note=reference.target, heading=reference.heading).strip(" >")
         else:
             assert item.file_path is not None
@@ -664,8 +702,10 @@ class _FilesPlan:
     attached: List[PurePosixPath]
     source_tag: str
     folder_prefix: str
-    # Each file, by path: how to fingerprint it (import_origins.py).
+    # Each file that comes in, by path: how to fingerprint it (import_origins.py).
     fingerprints: Dict[str, Callable[[], str]]
+    # The text files Changed since leaves out, by path: planned, for the links to them.
+    left_out: FrozenSet[str]
 
 
 def _plan_folder_of_files(
@@ -692,8 +732,10 @@ def _plan_folder_of_files(
     if not chosen:
         raise InputRejected("Nothing to import: tick at least one kind of file.")
     since = changed_since_day(changed_since)
-    chosen = [folder_file for folder_file in chosen if is_changed_since(_modified_at(import_folder, folder_file.path), since)]
-    if since is not None and not chosen:
+    in_date = {
+        folder_file.path for folder_file in chosen if is_changed_since(_modified_at(import_folder, folder_file.path), since)
+    }
+    if since is not None and not in_date:
         raise nothing_changed_since(since)
     source_tag = source_tag_for(imported_at, FILES.key)
     prefix = import_folder_prefix(folder_prefix)
@@ -707,7 +749,9 @@ def _plan_folder_of_files(
         if suffix in TEXT_SUFFIXES and not is_kept_as_file and folder_file.size <= MAX_IN_MEMORY_FILE_BYTES:
             text_file = read_text_file(import_folder, folder_file.path)
         if text_file is None:
-            attached.append(folder_file.path)
+            # A file kept as a file comes in only when it changed since the day.
+            if folder_file.path in in_date:
+                attached.append(folder_file.path)
             continue
         text_files.append(text_file)
     planned = [
@@ -717,13 +761,15 @@ def _plan_folder_of_files(
         )
         for text_file in text_files
     ]
+    # A text file left out by the day is planned all the same, for the links to it.
     fingerprints: Dict[str, Callable[[], str]] = {
-        **{str(text_file.path): partial(text_fingerprint, text_file.text) for text_file in text_files},
+        **{str(text_file.path): partial(text_fingerprint, text_file.text) for text_file in text_files if text_file.path in in_date},
         **{str(path): partial(_file_fingerprint, import_folder, path) for path in attached},
     }
     return _FilesPlan(
         folder=import_folder, planned=planned, attached=attached,
         source_tag=source_tag, folder_prefix=prefix, fingerprints=fingerprints,
+        left_out=frozenset(str(text_file.path) for text_file in text_files if text_file.path not in in_date),
     )
 
 
@@ -749,11 +795,11 @@ class CmdPreviewFolderOfFiles(QueryCommand):
         )
         before = meet_earlier_import(
             folder_name=self.folder_name, prefix_folder=plan.folder_prefix, fingerprints=plan.fingerprints,
-            choice=self.earlier_notes,
+            choice=self.earlier_notes, left_out=plan.left_out,
         )
         # What comes in: not the files that are as they were, when their old notes are replaced.
-        planned = [note for note in plan.planned if not before.is_left(note.source_path)]
-        attached = [path for path in plan.attached if not before.is_left(str(path))]
+        planned = [note for note in plan.planned if before.is_written(note.source_path)]
+        attached = [path for path in plan.attached if before.is_written(str(path))]
         index = VaultIndex(plan.planned, plan.attached)
         resolved = [
             _resolve(index, reference, from_path=note.source_path) for note in planned for reference in note.links
@@ -778,7 +824,7 @@ class CmdPreviewFolderOfFiles(QueryCommand):
             "filesWithCommentsCount": sum(1 for finding in findings if finding.has_comments),
             "blockIdCount": sum(finding.block_id_count for finding in findings),
             "calloutCount": sum(finding.callout_count for finding in findings),
-            "missingLinkCount": sum(1 for item in resolved if item.note is None and item.file_path is None),
+            "missingLinkCount": sum(1 for item in resolved if _stays_as_written(item, _standing_notes(plan.planned, before))),
             # A text file that isn't UTF-8 is attached instead: nothing is left out for it.
             "unreadableFileCount": 0,
             "unusedAttachmentCount": 0,
@@ -822,11 +868,11 @@ class CmdImportFolderOfFiles(QueryCommand):
         is_new_folder = is_new_import_folder(plan.folder_prefix)
         before = meet_earlier_import(
             folder_name=self.folder_name, prefix_folder=plan.folder_prefix, fingerprints=plan.fingerprints,
-            choice=self.earlier_notes,
+            choice=self.earlier_notes, left_out=plan.left_out,
         )
         if nothing_to_bring_in(before, list(plan.fingerprints)):
             raise InputRejected(NOTHING_TO_BRING_IN)
-        attached_paths = [path for path in plan.attached if not before.is_left(str(path))]
+        attached_paths = [path for path in plan.attached if before.is_written(str(path))]
         stored = _store_files(plan.folder, attached_paths, images=self.images, token=self.token, progress=progress)
         file_ids = stored.file_ids
         # Links to a file left as it is lead to the note it has (its text file's; a file kept
@@ -836,8 +882,9 @@ class CmdImportFolderOfFiles(QueryCommand):
         planned = [
             replace(note, root=_with_links(note.root, _replacements(
                 [_resolve(index, reference, from_path=note.source_path) for reference in note.links], file_ids,
+                _standing_notes(all_planned, before),
             )))
-            for note in all_planned if not before.is_left(note.source_path)
+            for note in all_planned if before.is_written(note.source_path)
         ]
         attached = [
             _file_note(
@@ -911,7 +958,10 @@ def _linked_file_paths(plan: _ImportPlan) -> List[PurePosixPath]:
     """The vault's files its notes link to or show: the files it stores besides Canvas, Base
     and Excalidraw files (never images)."""
     index = VaultIndex(plan.planned, plan.vault.other_files)
-    resolved = [_resolve(index, reference, from_path=note.source_path) for note in plan.planned for reference in note.links]
+    resolved = [
+        _resolve(index, reference, from_path=note.source_path)
+        for note in plan.planned if note.source_path not in plan.left_out for reference in note.links
+    ]
     return sorted({item.file_path for item in resolved if item.file_path is not None}, key=_path_key)
 
 
