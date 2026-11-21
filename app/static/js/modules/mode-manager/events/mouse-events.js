@@ -25,6 +25,7 @@ import {
     hideSearchContextsOverlayForPointerMove,
 } from '../services/search-contexts-overlay-service.js';
 import { CommandGate } from '../services/command-gate-service.js';
+import { showLinkedText } from '../services/find-in-list-service.js';
 import { handleValueButtonClick, VALUE_BUTTONS_SELECTOR } from '../services/value-buttons-service.js';
 import { deleteEditedNoteAskingIfReferenced } from '../services/referenced-note-removal-service.js';
 import { actionSaveNote } from '../actions/content-actions.js';
@@ -2226,8 +2227,13 @@ function handleReferenceLinkClick(event) {
         throw new Error('Reference link missing target note id');
     }
 
+    // A link to a place in the note ([[note#words]]) carries its words; a link to the whole note, none.
+    const section = container.getAttribute('data-ref-section');
     void CommandGate.run('mouse.open_reference_in_new_tab', async () => {
         await openReferenceInNewTab(referenceNoteId);
+        if (section !== null) {
+            await showLinkedText(section);
+        }
     });
     return true;
 }

@@ -155,6 +155,7 @@ Most of what MetaList does on screen after an action follows from these.
 
 ## Links, embeds and files
 
+- **A link can lead to any words in a note (`[[note#words]]`), not only to a heading.** Why: it is more useful, and a link whose words were reworded simply opens the note, so nothing breaks. The words are marked on arrival, until your next click, scroll or key, because you cannot otherwise know where in a long note the link meant.
 - **Link to… and Embed… type `[[` or `![[` for you.** Why: they teach the syntax by showing it.
 - **A reference page (a followed link, backlinks) has back and forward arrows instead of a
   search.** Why: showing something that is not a search in the search bar misleads however it

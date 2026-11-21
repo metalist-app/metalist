@@ -248,6 +248,17 @@ class ReferenceSuggestionsRequest(TypedDict):
     isUntaggedView: bool
 
 @with_config(ConfigDict(strict=True))
+class ReferenceLinesRequest(TypedDict):
+    """What was typed after `[[` up to a `#` (a note's name, or its id) and after the `#` (words
+    of a line in it), the note it is typed in, and the tab's view, as ReferenceSuggestionsRequest."""
+    note_query: Text
+    line_query: Text
+    editing_note_id: Identifier
+    search: Text
+    tabId: Identifier
+    isUntaggedView: bool
+
+@with_config(ConfigDict(strict=True))
 class TagSuggestionsRequest(TypedDict):
     note_id: Identifier
     anchors: list[Identifier]

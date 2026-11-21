@@ -7,7 +7,7 @@ import { restoreSelection } from '../../editor-selection.js';
 // Placed as the paste format card is: below its anchor, or above it near the window's bottom.
 import { contentMaxHeight, placePasteFormatOffer } from './floating-card-placement.js';
 import { PREVIEW_OWNERS, hideReferencePreview, placeReferencePreview, showReferencePreview } from './reference-preview-card-service.js';
-import { chosenReferenceText, chosenSearchLinkText } from './reference-text.js';
+import { chosenReferenceText, chosenSearchLinkText, chosenSectionReferenceText, sectionQueryOf } from './reference-text.js';
 import { getReferenceViewKindForTab } from './reference-source-navigation-service.js';
 import { searchesToOffer } from './search-link-suggestions.js';
 
@@ -192,10 +192,37 @@ function showPreview() {
 // A search context offered as a search link (search-link-suggestions.js), above the notes.
 const SEARCH_KIND = 'search';
 const NOTE_KIND = 'note';
+// A line of a note, offered once a `#` is typed after the note's name.
+const LINE_KIND = 'line';
+
+function isEmbedTrigger() {
+    const node = moduleState.triggerNode;
+    return node !== null && moduleState.triggerStart > 0 && node.data[moduleState.triggerStart - 1] === '!';
+}
+
+function buildLineItem(suggestion, index) {
+    const item = document.createElement('div');
+    item.className = 'reference-suggestion reference-suggestion-line';
+    if (suggestion.isHeading) item.classList.add('is-heading');
+    item.setAttribute('role', 'option');
+    item.dataset.index = String(index);
+    const title = document.createElement('div');
+    title.className = 'reference-suggestion-title';
+    const text = document.createElement('span');
+    text.className = 'reference-suggestion-text';
+    text.textContent = suggestion.text;
+    title.appendChild(text);
+    const context = document.createElement('div');
+    context.className = 'reference-suggestion-context';
+    context.textContent = suggestion.firstLine;
+    item.append(title, context);
+    return item;
+}
+
+const ITEM_BUILDERS = { [SEARCH_KIND]: buildSearchItem, [NOTE_KIND]: buildItem, [LINE_KIND]: buildLineItem };
 
 function offeredSearches(query) {
-    const node = moduleState.triggerNode;
-    const isEmbed = node !== null && moduleState.triggerStart > 0 && node.data[moduleState.triggerStart - 1] === '!';
+    const isEmbed = isEmbedTrigger();
     const contexts = ModeContext.tabOrder.map((tabId) => ({
         tabId,
         search: ModeContext.tabs[tabId].searchQuery,
@@ -321,9 +348,7 @@ function renderList(query, suggestions) {
     list.className = 'reference-suggestions';
     list.setAttribute('role', 'listbox');
     list.setAttribute('aria-label', 'Notes and searches to link');
-    suggestions.forEach((suggestion, index) => list.appendChild(
-        suggestion.kind === SEARCH_KIND ? buildSearchItem(suggestion, index) : buildItem(suggestion, index),
-    ));
+    suggestions.forEach((suggestion, index) => list.appendChild(ITEM_BUILDERS[suggestion.kind](suggestion, index)));
     list.style.left = '0px';
     list.style.top = '0px';
     list.addEventListener('mousemove', highlightPointed);
@@ -336,7 +361,40 @@ function renderList(query, suggestions) {
     placeList();
 }
 
+// After a `#`: the lines of the note named before it, headings first (the maintainer,
+// 2026-11-21). An embed shows its whole note, so `![[` offers none.
+async function requestLines(query, section, noteId) {
+    if (isEmbedTrigger()) {
+        renderList(query, []);
+        return;
+    }
+    const requestId = moduleState.requestSerial;
+    const controller = new AbortController();
+    moduleState.requestController = controller;
+    const response = await NotesAPI.fetchReferenceLines(section.noteQuery, section.lineQuery, noteId, controller.signal).catch((error) => {
+        rethrowUnexpectedError(error);
+        if (error && error.name === 'AbortError') return null;
+        throw error;
+    });
+    if (moduleState.requestController === controller) moduleState.requestController = null;
+    if (response === null || requestId !== moduleState.requestSerial) return;
+    if (!response || typeof response.noteId !== 'string' || typeof response.firstLine !== 'string' || !Array.isArray(response.lines)) {
+        throw new Error('Reference lines response requires the note and its lines');
+    }
+    renderList(query, response.lines.map((line) => {
+        if (typeof line.text !== 'string' || line.text === '' || typeof line.isHeading !== 'boolean') {
+            throw new Error('A reference line requires its text and whether it is a heading');
+        }
+        return { kind: LINE_KIND, noteId: response.noteId, firstLine: response.firstLine, text: line.text, isHeading: line.isHeading };
+    }));
+}
+
 async function requestSuggestions(query, noteId) {
+    const section = sectionQueryOf(query);
+    if (section !== null) {
+        await requestLines(query, section, noteId);
+        return;
+    }
     const requestId = moduleState.requestSerial;
     const controller = new AbortController();
     moduleState.requestController = controller;
@@ -413,9 +471,14 @@ function choose(index) {
         throw new Error('The `[[` a reference suggestion was chosen for is gone');
     }
     const textAfterCaret = trigger.node.data.slice(trigger.end);
-    const reference = suggestion.kind === SEARCH_KIND
-        ? chosenSearchLinkText(suggestion.search, textAfterCaret)
-        : chosenReferenceText(suggestion.noteId, textAfterCaret);
+    let reference = '';
+    if (suggestion.kind === SEARCH_KIND) {
+        reference = chosenSearchLinkText(suggestion.search, textAfterCaret);
+    } else if (suggestion.kind === LINE_KIND) {
+        reference = chosenSectionReferenceText(suggestion.noteId, suggestion.text, textAfterCaret);
+    } else {
+        reference = chosenReferenceText(suggestion.noteId, textAfterCaret);
+    }
     closeReferenceSuggestions();
     const range = document.createRange();
     range.setStart(trigger.node, trigger.start);

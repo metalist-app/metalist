@@ -7701,6 +7701,11 @@ html[data-theme="dark"] .context-menu-item.is-submenu-open {
     min-width: 0;
 }
 
+/* A line of a note, offered after # in the [[ list: a heading reads as one. */
+.reference-suggestion-line.is-heading .reference-suggestion-text {
+    font-weight: 600;
+}
+
 .reference-suggestion-text,
 .reference-suggestion-context,
 .reference-suggestion-snippet {

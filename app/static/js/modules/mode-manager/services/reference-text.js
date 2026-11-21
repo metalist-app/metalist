@@ -19,6 +19,33 @@ export function chosenReferenceText(noteId, textAfterCaret) {
     return `${REFERENCE_OPEN}${noteId}${REFERENCE_CLOSE}`;
 }
 
+const SECTION_SEPARATOR = '#';
+
+/**
+ * What was typed after `[[`, split at its first `#`: the note's name (or id) before it and the
+ * words of a line after it; null when no `#` was typed (docs/ui/references.md, "Links to a
+ * place in a note").
+ */
+export function sectionQueryOf(query) {
+    if (typeof query !== 'string') {
+        throw new Error('sectionQueryOf requires the text typed after [[');
+    }
+    const at = query.indexOf(SECTION_SEPARATOR);
+    if (at < 0) return null;
+    return { noteQuery: query.slice(0, at), lineQuery: query.slice(at + SECTION_SEPARATOR.length) };
+}
+
+/** What choosing a line of a note in the `[[` list writes: a link to those words in the note. */
+export function chosenSectionReferenceText(noteId, lineText, textAfterCaret) {
+    if (typeof noteId !== 'string' || noteId === '' || typeof lineText !== 'string' || lineText.trim() === ''
+        || /[[\]|\n]/.test(lineText) || typeof textAfterCaret !== 'string') {
+        throw new Error('chosenSectionReferenceText requires a note id, a line a link can hold and the text after the caret');
+    }
+    const written = `${REFERENCE_OPEN}${noteId}${SECTION_SEPARATOR}${lineText}`;
+    if (REFERENCE_REST_RE.test(textAfterCaret)) return written;
+    return `${written}${REFERENCE_CLOSE}`;
+}
+
 const SEARCH_LINK_PREFIX = 'search:';
 
 /** What choosing a search in the `[[` list writes: its search link (docs/ready-to-build/search-links.md). */
