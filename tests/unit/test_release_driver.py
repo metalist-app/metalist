@@ -77,7 +77,10 @@ def test_release_driver_matrix_matches_workflow_source() -> None:
         "Windows Edge HTTPS",
     ):
         assert workflow.count(f"label: {label}") == 2
-    assert workflow.count("if: ${{ github.ref == 'refs/heads/main' }}") == 6
+    # The matrix runs for main, and by hand on a branch before it merges (AGENTS.md, "Check
+    # Before Merging"); publishing runs only for a version tag.
+    assert workflow.count("if: ${{ github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch' }}") == 6
+    assert workflow.count("if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')") == 1
     assert "run-id: ${{ steps.validation.outputs.run_id }}" in workflow
     assert "python scripts/resolve_release_validation.py" in workflow
 

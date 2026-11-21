@@ -1,5 +1,9 @@
 name: Publish to PyPI
 
+# The matrix runs on each push to main, which is the release's evidence, and by hand (Run
+# workflow) on any branch: a feature branch is checked this way before it merges
+# (AGENTS.md, "Check Before Merging"; scripts/check_branch.py). Publishing runs only for a
+# version tag, and only from the main push's run.
 on:
   push:
     branches:
@@ -17,7 +21,7 @@ permissions:
 
 jobs:
   build:
-    if: ${{ github.ref == 'refs/heads/main' }}
+    if: ${{ github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch' }}
     runs-on: ubuntu-latest
     steps:
       - name: Check out repository
@@ -61,7 +65,7 @@ jobs:
           if-no-files-found: error
 
   python-tests:
-    if: ${{ github.ref == 'refs/heads/main' }}
+    if: ${{ github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch' }}
     name: Python (${{ matrix.os }}, ${{ matrix.python-version }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
@@ -102,7 +106,7 @@ jobs:
           if-no-files-found: error
 
   platform-checks:
-    if: ${{ github.ref == 'refs/heads/main' }}
+    if: ${{ github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch' }}
     name: JavaScript and sanity (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
@@ -144,7 +148,7 @@ jobs:
         run: python scripts/check_types.py check
 
   installed-package:
-    if: ${{ github.ref == 'refs/heads/main' }}
+    if: ${{ github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch' }}
     name: Package and update (${{ matrix.os }}, ${{ matrix.python-version }})
     needs: build
     runs-on: ${{ matrix.os }}
@@ -220,7 +224,7 @@ jobs:
           subprocess.check_call([sys.executable, '-I', str(root / 'scripts/smoke_self_update.py'), str(wheels[0])])"
 
   browser-smoke:
-    if: ${{ github.ref == 'refs/heads/main' }}
+    if: ${{ github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch' }}
     name: Browser smoke (${{ matrix.label }})
     needs: build
     runs-on: ${{ matrix.os }}
@@ -310,7 +314,7 @@ jobs:
 
   browser-soak:
     name: Browser soak (${{ matrix.label }})
-    if: ${{ github.ref == 'refs/heads/main' }}
+    if: ${{ github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch' }}
     needs: build
     runs-on: ${{ matrix.os }}
     timeout-minutes: 25

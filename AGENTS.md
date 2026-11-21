@@ -110,12 +110,15 @@ Never answer an unwanted behavior with "you can turn it off": fix the behavior.
 - A tag workflow must reuse the exact successful main-run distribution artifact after independently checking all required main-job conclusions and artifact provenance. It must not rebuild the distribution or rerun the cross-platform matrix on the tag. The release driver must verify the published PyPI files against that main-run artifact and perform a clean public install.
 - This gate does not authorize git tagging, pushing, or publishing; existing user-permission requirements still apply.
 
-### CRITICAL: Run the Full Release Matrix Once, on Main
+### CRITICAL: Check Before Merging; Main's Push Is the Release Evidence
 
-- Do focused checks during feature development; do not require the full Windows, macOS, and Linux release matrix on feature branches or duplicate it locally. A push to `main` is the sole automatic release-candidate matrix run; an explicit manual check on `main` cannot replace that push run as release evidence. Do not schedule duplicate full-matrix runs for unchanged code or share a canceling concurrency group across event types.
+Decided 2026-11-18, replacing "the full matrix runs once, on main": the push of 0.31.0 carried about thirty commits GitHub had never run, and went red in two browser suites the changes had not touched (`edit-previews` in Firefox, `theme-fade` in Chrome). Only the suites a change "touched" had been run, here and in Docker.
+
+- **A feature branch is checked on GitHub before it merges.** COMMIT FEATURE pushes the branch and runs both workflows on it (`.venv/bin/python scripts/check_branch.py`: "Publish to PyPI", whose matrix runs by hand on any branch and publishes nothing, and "Browser suites"). Both must pass for the branch's exact commit before the merge. A red run is fixed on the branch, in a new commit, and checked again; `main` never sees it. Do focused checks during development and at checkpoints: the branch check runs once, at COMMIT FEATURE, or earlier when the maintainer asks.
+- A push to `main` is still the sole release-candidate matrix run; a manual run, on `main` or a branch, cannot replace that push run as release evidence. Do not duplicate the matrix locally, or share a canceling concurrency group across event types.
 - After review and the required human testing, merge and push `main`. Treat its exact-commit matrix as the release gate. Never create a PyPI release tag until every required main job passes and the tested distribution artifact is available.
 - If main validation fails, preserve the logs/artifacts, identify the cause, fix it in a new commit, and validate that new commit on main. Never rerun a failed job merely to obtain green status; a rerun may confirm a diagnosis but does not erase the original failure. A job GitHub never started (cancelled with no runner and no step, as when macOS runners are short) has no result and is not a failure: the release driver reruns such jobs, up to three times, and both release gates accept a rerun only when every job it ran again had never started.
-- A tag push checks the successful exact-commit main run and publishes its tested artifact without rerunning the matrix. Do not add a second full matrix on feature branches or tags.
+- A tag push checks the successful exact-commit main run and publishes its tested artifact without rerunning the matrix. Do not add a second full matrix on tags.
 
 ### CRITICAL: Main Stays Green
 
@@ -124,7 +127,7 @@ Agreed 2026-11-15, after GitHub's "Browser suites" run had been red since 2026-1
 - **Both workflows count.** Main is green only when the exact commit's "Publish to PyPI" and "Browser suites" runs both pass. Never create a PyPI release tag while that commit's "Browser suites" run is red, pending or missing, as for "Publish to PyPI" above. `scripts/release.py` waits for both runs, and the tag's own check (`scripts/resolve_release_validation.py`) refuses to publish without both.
 - **Red is fixed next.** A red run on main is the next work: nothing else merges into `main` until it is green again. Never stack a merge on a red run, and never rerun a failed job to get green (as above).
 - **Whoever pushes reads the result.** After every push to `main`, follow both runs to the end (`gh run watch`), and bring the user every failure while it is fresh and one change deep: what failed, why, and the fix.
-- **Linux before merging.** GitHub runs the suites on Linux, whose fonts, Puppeteer and npm differ from this Mac's. COMMIT FEATURE runs each browser suite the feature touches on Linux too, in Docker (`scripts/linux-ci/run-suites.sh chrome <suites>`, then `firefox`; Docker Desktop must be running), as well as here. To reproduce a GitHub failure, run its slice the way GitHub does: `scripts/linux-ci/run-suites.sh <browser> --shard <i>/10`.
+- **GitHub before merging.** GitHub runs the suites on Linux, whose fonts, Puppeteer and npm differ from this Mac's, and on slower machines. COMMIT FEATURE runs both workflows on the branch before it merges ("Check Before Merging" above), which covers every suite in both browsers, not only the ones a change touches. Docker stays for reproducing a GitHub failure the way GitHub runs it: `scripts/linux-ci/run-suites.sh <browser> --shard <i>/10`, or `scripts/linux-ci/run-suites.sh chrome <suites>` (Docker Desktop must be running).
 - **Tooling is pinned and checked.** The browser driver is pinned exactly; `tests/unit/browser_driver_pin.test.mjs` and `scripts/browser-driver-pin.mjs` fail when this checkout, the lockfile or the release checks disagree. Install with `npm ci`, never with an unpinned `npm install`.
 
 ### CRITICAL: Always Ask Before Git Operations
@@ -236,15 +239,16 @@ If the code works, suggest committing. There are two types:
 - The entire feature has been tested by the user and is working as expected.
 - Update any relevant Markdown in `docs/` to reflect the feature. If the right document does not exist yet, ask the user whether to create a new one (and create `docs/` or subfolders when necessary). Suggest renames to keep docs organized when appropriate.
 - Remove PLAN.md as part of this workflow.
-- Run the quick full checks once, here (not at checkpoints), after committing to the feature branch: `.venv/bin/python scripts/full_checks.py --no-browser` (about 2 minutes). It runs at once the Python unit suite on the local version and on every supported version (3.11 and 3.14), the Windows-style clone, the JS unit tests, the type check, the supply-chain check, the dependency audit (the advisories the release audit checks), the startup sanity gates and the ShockHarness gate against `main`, and prints one line per check (logs in `logs/checks/`). Also run, alone, each browser suite the feature touches (`BROWSER_TEST_BROWSER=chrome BROWSER_TEST_SUITE=<suite> npm run test:browser`), and the same suites on Linux in Chrome and Firefox (`scripts/linux-ci/run-suites.sh`, "Main Stays Green"). The whole browser suite does not run here, nor before a push: GitHub runs the checks on push (below). Fix any failure before merging.
+- Run the quick full checks once, here (not at checkpoints), after committing to the feature branch: `.venv/bin/python scripts/full_checks.py --no-browser` (about 2 minutes). It runs at once the Python unit suite on the local version and on every supported version (3.11 and 3.14), the Windows-style clone, the JS unit tests, the type check, the supply-chain check, the dependency audit (the advisories the release audit checks), the startup sanity gates and the ShockHarness gate against `main`, and prints one line per check (logs in `logs/checks/`). Also run, alone, each browser suite the feature touches (`BROWSER_TEST_BROWSER=chrome BROWSER_TEST_SUITE=<suite> npm run test:browser`). The whole browser suite does not run here: GitHub runs it on the branch (next). Fix any failure before going on.
 - Commit the changes to the feature branch.
+- Push the feature branch and check it on GitHub (decided 2026-11-18, "Check Before Merging"): `git push -u origin <branch>`, then `.venv/bin/python scripts/check_branch.py`, which runs both workflows on that commit and waits (about 20 minutes). Both must pass. Fix a failure on the branch in a new commit, push, and check again; never rerun a failed job to get green.
 - Merge the branch into main.
-- Delete the feature branch.
+- Delete the feature branch, here and on GitHub (`git push origin --delete <branch>`).
 
 **Before pushing main**
 - Merging into `main` stays on this machine until `main` is pushed (by the user, or by Claude when the user asks), and that push starts the full Windows/macOS/Linux CI matrix and the browser suites.
 - Do not run the whole browser suite locally before a push (decided 2026-10-28: running it here and again on GitHub was redundant). The push runs the GitHub checks, and "Main Stays Green" above says what follows: both runs are read to the end, and a red one is fixed next. `npm run test:browser:all` stays available for an explicit request.
-- Never push without the user asking (see "git" below).
+- Never push `main` without the user asking (see "git" below). The feature branch's push in COMMIT FEATURE is part of that workflow.
 
 **COMMIT** (without qualifier)
 - If the user just says COMMIT, ask for clarification:
@@ -638,4 +642,4 @@ Do not run git commands without explicit user permission. Once permission is gra
 
 NEVER do this: `rm -f .git/index.lock`
 
-NEVER push to github automatically: push only when the user asks. After a push, follow GitHub's runs to the end ("Main Stays Green").
+NEVER push `main` to github automatically: push it only when the user asks. COMMIT FEATURE pushes its feature branch, to check it on GitHub before the merge ("Check Before Merging"), and deletes that branch there after merging. After a push of `main`, follow GitHub's runs to the end ("Main Stays Green").
