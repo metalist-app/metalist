@@ -112,6 +112,8 @@ import {
     playReferenceViewTransition,
 } from '../services/reference-view-transition-service.js';
 import { shouldFocusSearchInputForViewModeTab } from '../services/view-mode-search-shortcut-service.js';
+import { searchContextForDigitKey } from '../services/search-context-digit-service.js';
+import { isContextMenuOpen } from '../../context-menu/context-menu-service.js';
 import {
     getTagBarValue,
     normalizeTagBarForNewTag,
@@ -575,6 +577,10 @@ function handleKeyDown(event) {
         }
     }
     
+    if (!ModeContext.isEditing && handleSearchContextDigit(event)) {
+        return;
+    }
+
 	    const isMoveKey = MOVE_KEYS.has(event.key);
     const isSelectedDeleteShortcut = shouldDeleteSelectedNoteFromKeyboard({
         key: event.key,
@@ -3637,12 +3643,62 @@ function buildTabFolderIconHtml(tabId) {
     return '<span class="virtual-folder-icon tab-context-folder-icon" aria-hidden="true"></span>';
 }
 
+// The search contexts as the list numbers them. A reference page is not a search context
+// (reference-cards.md): its hidden tab is not listed.
+function listedSearchContextTabIds() {
+    return ModeContext.tabOrder.filter((tabId) => getReferenceNavigationLabelForTab(tabId) === '');
+}
+
+// The search context in use: with a reference page shown, the search it came from.
+function shownSearchContextTabId() {
+    return isViewingReferenceSource() ? getActiveReferenceOriginScope().scopeTabId : ModeContext.activeTabId;
+}
+
+// A search context chosen in the list, by a click or by its number key.
+async function chooseSearchContext(tabId) {
+    const searchQuery = ModeContext.getExecutedSearchQuery(tabId);
+    if (typeof searchQuery !== 'string') {
+        throw new Error('A chosen search context\'s executed search must be a string');
+    }
+    const activityPromise = NotesAPI.recordTabSearchSelection(searchQuery);
+    hideSearchContextsOverlay();
+    // A context on a reference page goes back to that page, as it was left (2026-11-14).
+    let shownTabId = getReferencePageTabForContext(tabId);
+    if (shownTabId === '') {
+        shownTabId = tabId;
+    }
+    // Picking the search context already shown changes nothing: its Untagged view
+    // stays until View → All Notes or its chip's × ends it (docs/ui/state-handling.md).
+    void CommandGate.run('tab.select', async () => {
+        if (shownTabId !== ModeContext.activeTabId) {
+            await switchToTabContext(shownTabId, {});
+        }
+    });
+    if (activityPromise !== null) await activityPromise;
+}
+
+// 1 to 9 choose the search context of that number while nothing is typed (the maintainer,
+// 2026-11-21); true when the key did. The caller has ruled out fields, dialogs and editing.
+function handleSearchContextDigit(event) {
+    const tabId = searchContextForDigitKey({
+        key: event.key,
+        hasModifier: event.metaKey || event.ctrlKey || event.altKey || event.shiftKey,  // shockharness: ignore[DEF003] reason="a boolean OR of conditions, not a fallback"
+        isMenuOpen: isContextMenuOpen(),
+        listedTabIds: listedSearchContextTabIds(),
+        shownTabId: shownSearchContextTabId(),
+    });
+    if (tabId === '') return false;
+    event.preventDefault();
+    event.stopPropagation();
+    void chooseSearchContext(tabId);
+    return true;
+}
+
 export function updateSearchContextsList() {
     const searchContextsList = document.getElementById('search-contexts-list');
     updateReferenceSourceIndicator();
     if (!searchContextsList) return;
     const tabs = ModeContext.tabs;
-    const activeTabId = ModeContext.activeTabId;
     const tabOrder = ModeContext.tabOrder;
 
     if (!CONFIG.TABS || typeof CONFIG.TABS.MAX_TABS !== 'number' || CONFIG.TABS.MAX_TABS <= 0) {
@@ -3656,8 +3712,8 @@ export function updateSearchContextsList() {
     }
     // A reference page is not a search context (reference-cards.md): its hidden tab is not listed,
     // and with a page shown, the search it came from is the one in use.
-    const listedTabIds = tabOrder.filter((tabId) => getReferenceNavigationLabelForTab(tabId) === '');
-    const listedActiveTabId = isViewingReferenceSource() ? getActiveReferenceOriginScope().scopeTabId : activeTabId;
+    const listedTabIds = listedSearchContextTabIds();
+    const listedActiveTabId = shownSearchContextTabId();
     for (let i = 0; i < listedTabIds.length; i++) {
         const tabId = listedTabIds[i];
         const tabEntry = tabs[tabId];
@@ -3714,25 +3770,7 @@ export function updateSearchContextsList() {
                 if (!tabId) {
                     return;
                 }
-                const searchQuery = ModeContext.getExecutedSearchQuery(tabId);
-                if (typeof searchQuery !== 'string') {
-                    throw new Error('Clicked tab executed search query must be a string');
-                }
-                const activityPromise = NotesAPI.recordTabSearchSelection(searchQuery);
-                hideSearchContextsOverlay();
-                // A context on a reference page goes back to that page, as it was left (2026-11-14).
-                let shownTabId = getReferencePageTabForContext(tabId);
-                if (shownTabId === '') {
-                    shownTabId = tabId;
-                }
-                // Picking the search context already shown changes nothing: its Untagged view
-                // stays until View → All Notes or its chip's × ends it (docs/ui/state-handling.md).
-                void CommandGate.run('tab.select', async () => {
-                    if (shownTabId !== ModeContext.activeTabId) {
-                        await switchToTabContext(shownTabId, {});
-                    }
-                });
-                if (activityPromise !== null) await activityPromise;
+                await chooseSearchContext(tabId);
             });
         });
         

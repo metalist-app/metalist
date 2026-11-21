@@ -75,6 +75,7 @@ export class HelpModal extends BaseModal {
                     { keys: 'Esc', description: 'Defocus search, exit edit mode, or close top modal' },
                     { keys: 'Enter', description: 'Create new root note (idle or from search)' },
                     { keys: 'Tab', description: 'Focus search and select the current query (idle only)' },
+                    { keys: '1 … 9', description: 'Switch to the search context with that number (idle only)' },
                     { keys: `${modKey}+Z`, description: 'Undo' },
                     { keys: `${modKey}+${shiftKey}+Z / ${modKey}+Y`, description: 'Redo' },
                     { keys: `${modKey}++ / ${modKey}+−`, description: 'Make the picture under the pointer bigger / smaller' },

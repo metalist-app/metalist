@@ -64,6 +64,7 @@ Sources: docs/ui/controls.md, docs/ui/find.md
 | `⌘ + /` | Open command palette |
 | `⌘ + F` | Find in the list: the find bar finds text in the notes the list shows, also far below what is loaded and inside folded notes, and marks each match. `Enter` / `⌘ + G` goes to the next match, `⇧ + Enter` / `⇧ + ⌘ + G` to the previous one, `Esc` closes it. While editing, it saves and leaves the note first; in a dialog it stays the browser's find. See `docs/ui/find.md`. |
 | `Tab` | Focus the search input and select its full query (view mode only) |
+| `1`…`9` | Switch to the search context the list gives that number (view mode only: never while a note, the search box or any field is being typed in, or a dialog or menu is open; a number with no context, or the one already shown, does nothing) |
 | `?` | Open keyboard shortcuts / cheatsheet (idle mode) |
 | `⌘ + Z` | Undo |
 | `⌘ + Y` | Redo |
