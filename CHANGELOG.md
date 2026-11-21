@@ -2,6 +2,20 @@
 
 What changed in each MetaList release, newest first.
 
+## Changes in 0.32.0
+
+- **Importing a folder again can replace what came in before.** When some of a folder's files were imported earlier (the same folder into the same place), the Summary says when, how many changed since and how many of those you edited in MetaList, and asks: **Keep both** (chosen at first) or **Replace the old notes**. Replace puts a changed file's notes where the old ones were, so links to them keep working, leaves unchanged files alone, and keeps notes you edited unless you tick their box. Folders imported with an earlier MetaList are not recognized: importing them again only adds, as before. Bookmarks still only add.
+- **Changed since.** The import's Folder screen has a date, empty at first: only the files changed on that day or later come in.
+- **1 to 9 switch search contexts.** With nothing being typed, a number key goes to the search context the list shows under that number.
+- **Galleries:** a `@gallery` note inside an embed shows its grid, its switch and, folded, its row of pictures. A file with no picture of its own is one tile, and a Markdown, text, code or data file shows the top of the file as a small page. The switch sits right under the fold arrow.
+- **Restore From Backup** lists a row per backup (vault, date, size, place), grouped by vault with the open one first, and Choose File… picks a backup from anywhere on the computer MetaList runs on.
+- **Dropping files:** while a note is being edited, every dropped file goes into that note, wherever it is let go. A dropped `.md` file asks Note or File; Note makes a note with the file's text, tagged `@markdown`. A file dropped on the page keeps the date it was last changed (it took the time of the drop).
+- **Tag suggestions:** as you type, the matching tags come in the order of those the note's text names, those that already apply, then the rest, each by how often you use it. With nothing typed, the tag bar no longer offers a tag the list's search excludes, nor both a word and its plural. A pointer resting over the list no longer highlights a suggestion.
+- **The AI can say why MetaList works the way it does:** ask it why something behaves as it does, and it answers from the reasons recorded for each design decision, or says none is recorded.
+- The phone layout needs a touch screen as well as a narrow window. Password Audit's summary names `@password` and says what to do when it finds none.
+- This release upgrades each vault when it is first opened (database version 21). An older MetaList cannot open an upgraded vault.
+- Fixed: Export as HTML failed for a view with a gallery holding a PDF; a problem report now and then could not be made, and its code locations were always empty.
+
 ## Changes in 0.31.0
 
 - **Deleting a folder with its notes deletes their files too.** Delete Folder… says what goes ("Also delete its 1289 notes and their 212 files (1.8 GB)") and deletes the notes and those files in one step; the box now starts ticked. Delete Notes (Current View)… does the same. Before, the files stayed in the vault, and in every backup, until Trim Unused Files… was run. A file a note that stays also uses is kept. Deleting a single note still keeps its files, so ⌘Z can bring it back.

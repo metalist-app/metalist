@@ -5,6 +5,20 @@ What changed in each MetaList version, newest first, from its changelog
 Compare with installed_version from the help lookup to tell the user whether
 they already have a release. Version info offers updates (see the data topic).
 
+## 0.32.0
+
+- **Importing a folder again can replace what came in before.** When some of a folder's files were imported earlier (the same folder into the same place), the Summary says when, how many changed since and how many of those you edited in MetaList, and asks: **Keep both** (chosen at first) or **Replace the old notes**. Replace puts a changed file's notes where the old ones were, so links to them keep working, leaves unchanged files alone, and keeps notes you edited unless you tick their box. Folders imported with an earlier MetaList are not recognized: importing them again only adds, as before. Bookmarks still only add.
+- **Changed since.** The import's Folder screen has a date, empty at first: only the files changed on that day or later come in.
+- **1 to 9 switch search contexts.** With nothing being typed, a number key goes to the search context the list shows under that number.
+- **Galleries:** a `@gallery` note inside an embed shows its grid, its switch and, folded, its row of pictures. A file with no picture of its own is one tile, and a Markdown, text, code or data file shows the top of the file as a small page. The switch sits right under the fold arrow.
+- **Restore From Backup** lists a row per backup (vault, date, size, place), grouped by vault with the open one first, and Choose File… picks a backup from anywhere on the computer MetaList runs on.
+- **Dropping files:** while a note is being edited, every dropped file goes into that note, wherever it is let go. A dropped `.md` file asks Note or File; Note makes a note with the file's text, tagged `@markdown`. A file dropped on the page keeps the date it was last changed (it took the time of the drop).
+- **Tag suggestions:** as you type, the matching tags come in the order of those the note's text names, those that already apply, then the rest, each by how often you use it. With nothing typed, the tag bar no longer offers a tag the list's search excludes, nor both a word and its plural. A pointer resting over the list no longer highlights a suggestion.
+- **The AI can say why MetaList works the way it does:** ask it why something behaves as it does, and it answers from the reasons recorded for each design decision, or says none is recorded.
+- The phone layout needs a touch screen as well as a narrow window. Password Audit's summary names `@password` and says what to do when it finds none.
+- This release upgrades each vault when it is first opened (database version 21). An older MetaList cannot open an upgraded vault.
+- Fixed: Export as HTML failed for a view with a gallery holding a PDF; a problem report now and then could not be made, and its code locations were always empty.
+
 ## 0.31.0
 
 - **Deleting a folder with its notes deletes their files too.** Delete Folder… says what goes ("Also delete its 1289 notes and their 212 files (1.8 GB)") and deletes the notes and those files in one step; the box now starts ticked. Delete Notes (Current View)… does the same. Before, the files stayed in the vault, and in every backup, until Trim Unused Files… was run. A file a note that stays also uses is kept. Deleting a single note still keeps its files, so ⌘Z can bring it back.
@@ -184,25 +198,5 @@ they already have a release. Version info offers updates (see the data topic).
 - Fixed: right-clicking selected images (just pasted, for example) failed instead of opening the image menu; a refused chat Send now stays on screen with its reason; Enter and the arrow keys act only on a suggestion list made for what was typed; the banner and zoom work while editing; clicking a diagram edits it and pictures can be dragged; a move that changes nothing does nothing; a save made while a password is being set (or a backup restored) waits for it to finish instead of failing, and the "Processing" page returns to MetaList on its own; reminder fixes.
 - **MetaList now needs Python 3.11 or newer.** Python 3.10 reaches its end of life this month, and Pillow's fixes below no longer support it. An install on Python 3.10 needs a newer Python before it can update.
 - Security: Pillow 13.0.0 (eight advisories in decoding crafted TIFF, GIF, PPM, EPS and PDF files, which MetaList meets in remote images and attachments), pypdf 6.21.1 (crafted PDFs that loop, use too much memory, or reach arbitrary image parsers), aiohttp 3.14.4 (GHSA-2g87-pp6c-29x5), certifi 2026.10.19 and uv 0.13.4. The source repository moved to metalist-app/metalist.
-
-## 0.20.0
-
-- **Suggest Tags with AI** for the note being edited: right-click the note, or its tag bar past the tags, and choose 🤖 Suggest Tags with AI (for a note with children: This Note, or This Note and Its Children). The proposals appear under the tag bar for `+`/`−`, tags not yet in use marked **new** and grouped on the right; adding them can be undone. It shows only when an AI is set up and may see the note.
-- The robot count (🤖 N) next to a note: click it to open every collapsed note on the way to its proposals and edit the highest one that has some; right-click it to Accept All or Reject All, one undo step.
-- **Print**: the note menu's Print ▸ Note / View, the background menu's Print View, or the palette's Print view, through the browser's print dialog (Save as PDF included). Always light, fully expanded, without arrows, using the page's full width with its own margins, so the browser prints no header or footer.
-- Export as HTML and Print open one dialog: a title with a smart default (the note's first line, or MetaList with the view's search), which heads the page unless the first note already says it and names an exported file; 🤖 Suggest with AI for the title, asked only when you press it, which never sees private notes, usernames, passwords or the search; and, when some would show, an Include Unredacted Passwords / Usernames checkbox (unchecked: each shows `••••••••`, whatever its length).
-- Exported HTML files show the view as it is shown (its search, sort order, Untagged view; notes a search leaves out are absent), start fully expanded with MetaList's collapse arrows working in the file, and copy usernames, included passwords and `@copyable` values on click. Collapsing no longer shifts the page sideways.
-- `@username` notes are private like `@password`: never sent to the AI. Username, password and email rows show just their icon, named on hover, and the value.
-- Text never runs out of its note: a word too long for the line (a token, a hash, a long URL) breaks at the note's edge, and code, `@json`, `@diff`, CSV and Markdown code blocks wrap. Images shrink to fit their note or embedded note, and `@size` scales them only up to that width.
-- The light theme's header bar is black again, with white icons and count, and the AI chat header now lines up with the search bar.
-
-## 0.19.0
-
-- Paste formats: pasting a fenced code block that names its language tags the note `@markdown`, and `@markdown` now colours that code like `@code=<language>` (with its label). Code copied from VS Code is tagged `@code=<its language>`, and cells copied from Excel, Google Sheets or Numbers become CSV text tagged `@csv`.
-- Text that only looks like a format is offered, not applied: after pasting CSV-like, Markdown-like or code-like text, a small card says "Apply as CSV" / "Apply as Markdown" / "Apply as Python" (up to three close languages for code) with "Skip". The card moves nothing and never takes the keyboard; typing on, Escape or a click elsewhere closes it. It also appears when the paste makes a new note.
-- Right-click a tag already in the tag bar or the search box for **About this tag**: whether the note names it, the notes it shares with your other tags, whether a parent or a rule already gives it, its synonyms and implications, how many notes have it ("Only on this note" hints at a typo); in the search box, what it finds and what leaving it out removes. Edit Tag Relationships now comes first in the tag menu, at a fixed place under the pointer.
-- Tag suggestions: a web address in a note counts only by its site's name, so a YouTube link no longer suggests `HTTPS` or `V-neuron`; one letter alone no longer names a tag with longer words. A suggestion without evidence now says only what is true (what you typed matches, which part of its name the note has) instead of "Nothing in this note points to it".
-- Fixed: accepting a Grammarly suggestion while editing could undo itself and end editing, when Grammarly drew its card in an element MetaList did not recognise.
-- Removed the "Make pseudo-suggestions" test item from the note menu.
 
 Older versions are in the releases-2 help topic.
