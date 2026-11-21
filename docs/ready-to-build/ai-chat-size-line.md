@@ -17,7 +17,7 @@ People want some sense of how much they've used. Tokens mean little to them, dol
 
 ## 2. Per conversation, not per month
 
-A monthly total would imply a record of past months and a way to view it. MetaList keeps no list of past conversations, and each view has its own, so the number belongs to the conversation, however long it lasts.
+A monthly total would imply a record of past months and a way to view it. MetaList keeps no list of past conversations, and a vault has one conversation, shared by every tab and device (decided 2026-11-14, `docs/design/multi-view-editing.md`; saved with the vault since 2026-11-11), so the number belongs to the conversation, however long it lasts.
 
 ## 3. The line
 
@@ -48,6 +48,6 @@ A monthly total would imply a record of past months and a way to view it. MetaLi
 
 - Filed as ready to build, as its status asks. Nothing built.
 - **Confirmed:** no dollar figure for users (`docs/design/ai-providers.md` §5); the development-only tracker directly below the chat header, with nothing persisted (`docs/ui/ai-chat.md`); each provider's `billing_url` (`app/services/ai_catalog.py`), already linked from the AI settings.
-- **"Each view has its own" (§2)** is not true yet: several views are `docs/design/multi-view-editing.md`. Today the rule is simply one number per conversation.
+- **§2 first said "each view has its own" conversation.** Corrected 2026-11-21: a vault has one conversation, shared by every view, so there is one number per vault.
 
 **Decided 2026-11-08:** the number survives a restart, and so does the conversation: losing a conversation to an upgrade is not acceptable. That work is built (2026-11-11: `docs/ui/ai-chat.md`, "Saved with the vault"): this line's count is saved with the conversation, in `app/services/ai_chat.py`'s saved shape (`_saved_session`, raising `SAVED_FORMAT`).

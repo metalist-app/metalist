@@ -51,7 +51,7 @@ From `docs/ui/phone.md`: read-only; a tap on a note shows its own tags as blue p
 ## 5a. The folders: a full screen from the left (the maintainer, 2026-11-14)
 
 - **The phone gets every major feature of the desktop, the folders included** (`docs/ready-to-build/folders-tab-and-multiple-folders.md`, `virtual-folders.md`).
-- **The folders open as a full screen, the mirror of the AI:** the notes slide off to the right and the folders slide in from the left, filling everything above the bottom bar. From the left because on the desktop the folders are the column to the left of the notes. Picking a folder, the same button again, or a horizontal swipe, slides back to the notes. Same exception to the no-added-motion rule as the AI's slide, and Reduce Motion makes it an instant switch.
+- **The folders open as a full screen, the mirror of the AI:** the notes slide off to the right and the folders slide in from the left, filling everything above the bottom bar. From the left because on the desktop the folders are the column to the left of the notes. Picking a folder, the same button again, or a horizontal swipe, slides back to the notes. Same exception to the no-added-motion rule as the AI's slide (confirmed 2026-11-21, and written into `docs/ui/interaction-principles.md`, principle 2), and Reduce Motion makes it an instant switch.
 - **The phone never opens on the folders:** whether the tree shows is each view's own (multi-view note §2), and a phone view starts on the notes.
 - **Open, to decide when the phone is built:** where the button that opens them sits (the bottom bar holds ☰ · AI · ＋).
 
