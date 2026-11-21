@@ -10,7 +10,10 @@ import { waitForAppQuiet } from './browser-app-idle.mjs';
 // no word broken and neither the note nor the page scrolling sideways.
 
 const WIDE_WINDOW = {width: 1280, height: 800};
-const NARROW_WINDOW = {width: 480, height: 800};
+// A narrow desktop window. It keeps the desktop's layout (a narrow window alone is no phone
+// since 2026-11-18, phone-mode.js), whose note is narrower than the phone's was at 480 px: at
+// this width the three-column table still fits and the five-word one does not.
+const NARROW_WINDOW = {width: 640, height: 800};
 const REQUESTS_QUIET_MS = 300;
 const FRAMES_TO_SETTLE = 3;
 const LONG_TEXT = 'The motor is stopped and the controller waits for a start signal from the operator panel';
