@@ -68,11 +68,19 @@ function marked(page) {
     const bar = document.getElementById('find-in-list-bar');
     return {
       words: ranges.map(range => range.toString()),
+      // Find brings a match below the window to its bottom edge: there Firefox gives the words'
+      // bottom a fraction of a pixel past the edge (777..800.x of 800), so each edge is taken
+      // to its whole pixel.
       inView: ranges.every((range) => {
         const box = range.getBoundingClientRect();
-        return box.top >= 0 && box.bottom <= window.innerHeight;
+        return Math.round(box.top) >= 0 && Math.round(box.bottom) <= window.innerHeight;
       }),
       others,
+      // Where the words are, for a failure's message.
+      boxes: ranges.map((range) => {
+        const box = range.getBoundingClientRect();
+        return `${Math.round(box.top)}..${Math.round(box.bottom)} of ${window.innerHeight}`;
+      }),
       isBarShown: bar !== null && !bar.hidden,
       scrollY: Math.round(window.scrollY),
     };
@@ -101,8 +109,10 @@ async function labels(page, ids) {
 
 async function followedWordsAreMarkedUntilTheNextMove(page, ids) {
   await follow(page, ids, 'Day 3');
-  assert.deepEqual(await marked(page).then(({scrollY: _scrollY, ...rest}) => rest),
-    {words: ['Day 3'], inView: true, others: 0, isBarShown: false}, 'the words are in view and marked alone, with no find bar');
+  const first = await marked(page);
+  assert.deepEqual({words: first.words, inView: first.inView ? true : `${first.boxes.join(', ')}, scrolled ${first.scrollY}`, others: first.others, isBarShown: first.isBarShown},
+    {words: ['Day 3'], inView: true, others: 0, isBarShown: false},
+    `the words are in view and marked alone, with no find bar (words at ${first.boxes.join(', ')}, scrolled ${first.scrollY})`);
   assert.ok((await marked(page)).scrollY > 0, 'the page moved to bring the words into view');
   await page.mouse.move(WINDOW.width / 2, WINDOW.height / 2);
   await page.mouse.wheel({deltaY: 40});
