@@ -58,6 +58,8 @@ function buildHarness() {
         recordNotesShown() {},
         recordEditedRootMovedElsewhere() {},
         recordLockedRoots() {},
+        // No note is edited in a floating window here (editing-surface.js).
+        isEditingInWindow: () => false, markNoteEditedInWindow() {},
         noticeRefusedEdit() {},
         tellOtherTabsWhatIsEdited() {},
         ModeContext,

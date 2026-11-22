@@ -108,6 +108,7 @@ import {checkViewMenu} from './browser-view-menu-regressions.mjs';
 import {checkLinkIcons} from './browser-link-icon-regressions.mjs';
 import {checkReferencedByBadge} from './browser-referenced-by-badge-regressions.mjs';
 import {checkGallery} from './browser-gallery-regressions.mjs';
+import {checkFloatingEdit} from './browser-floating-edit-regressions.mjs';
 import {checkSectionLinks} from './browser-section-link-regressions.mjs';
 import {checkEditPreviews} from './browser-edit-preview-regressions.mjs';
 import {checkEmailFiles} from './browser-email-file-regressions.mjs';
@@ -472,6 +473,10 @@ try {
     await checkLinkIcons(page);
     assert.deepEqual(errors, []);
     console.log(`PASS link icon regressions in ${await browser.version()}`);
+  } else if (process.env.BROWSER_TEST_SUITE === 'floating-edit') {
+    await checkFloatingEdit(page);
+    assert.deepEqual(errors, []);
+    console.log(`PASS floating edit regressions in ${await browser.version()}`);
   } else if (process.env.BROWSER_TEST_SUITE === 'section-links') {
     await checkSectionLinks(page);
     assert.deepEqual(errors, []);

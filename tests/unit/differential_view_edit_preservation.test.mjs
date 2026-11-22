@@ -310,6 +310,8 @@ function installBrowserEnvironment(t, options = {}) {
         body,
     };
 
+    // The renderer looks for notes in the list alone (editing-surface.js findListNoteElement).
+    notesContainer.querySelector = selector => document.querySelector(selector);
     globalThis.HTMLElement = FakeElement;
     globalThis.HTMLImageElement = FakeImageElement;
     globalThis.document = document;

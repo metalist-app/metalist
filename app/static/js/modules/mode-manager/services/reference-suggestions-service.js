@@ -1,3 +1,4 @@
+import { findNoteContentElement } from '../../editing-surface.js';
 import { ApplicationState, stateValuesEqual } from '../../application-state.js';
 import { rethrowUnexpectedError } from '../../expected-errors.js';
 import { NotesAPI } from '../../api-client.js';
@@ -71,7 +72,7 @@ function setState(field, value) {
 }
 
 function editedContent(noteId) {
-    const content = document.querySelector(`.note[data-note-id="${noteId}"] > .note-content`);
+    const content = findNoteContentElement(noteId);
     if (!(content instanceof HTMLElement)) {
         throw new Error(`Edited note content missing: ${noteId}`);
     }
@@ -455,7 +456,7 @@ function askForList(trigger, noteId) {
 function handleSelectionChange() {
     const noteId = moduleState.noteId;
     if (noteId === null) return;
-    const content = document.querySelector(`.note[data-note-id="${noteId}"] > .note-content`);
+    const content = findNoteContentElement(noteId);
     if (!ModeContext.isEditingNote(noteId) || !(content instanceof HTMLElement)) {
         closeReferenceSuggestions();
         return;

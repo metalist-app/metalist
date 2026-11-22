@@ -77,6 +77,9 @@ class ViewDiffRequest(TypedDict):
     visibleBottomRootId: Text | None
     isUntaggedView: bool
     startAtListEnd: bool
+    # editingNoteId is edited in a floating window: this view holds its lock, and the list draws
+    # it as a note edited elsewhere (docs/ui/state-handling.md, "Floating note windows").
+    editingInWindow: bool
 
 # Find in the list (docs/ui/find.md): one step from a root position of the view.
 @with_config(ConfigDict(strict=True))

@@ -26,7 +26,7 @@ function getNoteElementById(noteId) {
         return null;
     }
     const escaped = escapeNoteId(noteId);
-    return document.querySelector(`.note[data-note-id="${escaped}"]`);
+    return document.querySelector(`#notes-container .note[data-note-id="${escaped}"]`);
 }
 
 function getNoteContentElement(noteElement) {

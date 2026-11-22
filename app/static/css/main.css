@@ -7017,6 +7017,19 @@ body.pref-animated-transitions .note-tag-bar:focus-within::after {
     z-index: 70;
 }
 
+/* A floating window's notes while one is edited: room for the fold arrows on the left, as its
+   read-only drawing has (floating-notes.css). */
+.floating-note-editing-tree {
+    padding-left: 30px;
+}
+
+/* In a floating window the edited note's tag bar sticks to the window's bottom: its suggestions
+   open upward, inside the window, which would cut them off below (floating-note-editing.js). */
+.floating-note-editing-tree .note-tag-suggestions {
+    top: auto;
+    bottom: calc(100% + 8px);
+}
+
 .note-tag-suggestions.is-up {
     top: auto;
     bottom: calc(100% + 8px);
@@ -14604,8 +14617,10 @@ body.virtual-folders-crowded .virtual-folders-resizer {
 /* A root note being edited in another view (multi-view editing step 4): a pencil on its top-left
    corner, where the eye starts reading the note (the maintainer, 2026-11-15), clear of the fold
    arrow and moving nothing; its tooltip says where. A click in the note takes it over
-   (edit-lock-service.js). */
-.note > .note-edit-lock {
+   (edit-lock-service.js). A note this view edits in a floating window shows the same pencil
+   (editing-surface.js), and a click in it moves the editing to the list. */
+.note > .note-edit-lock,
+.note > .note-edited-in-window {
     position: absolute;
     top: -12px;
     left: -6px;
@@ -14618,7 +14633,8 @@ body.virtual-folders-crowded .virtual-folders-resizer {
     z-index: 2;
 }
 
-.note > .note-edit-lock::after {
+.note > .note-edit-lock::after,
+.note > .note-edited-in-window::after {
     content: "";
     position: absolute;
     inset: 5px;
@@ -14631,7 +14647,8 @@ body.virtual-folders-crowded .virtual-folders-resizer {
     --note-edit-lock-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 20h4L19 9l-4-4L4 16z'/%3E%3C/svg%3E");
 }
 
-html[data-theme="dark"] .note > .note-edit-lock {
+html[data-theme="dark"] .note > .note-edit-lock,
+html[data-theme="dark"] .note > .note-edited-in-window {
     box-shadow: 0 0 0 2px #1f2937;
 }
 

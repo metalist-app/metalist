@@ -1,3 +1,4 @@
+import { findNoteElement } from '../../editing-surface.js';
 import { ModeContextInstance as ModeContext } from '../mode-context.js';
 import * as Logger from '../mode-logger.js';
 import { NotesAPI } from '../../api-client.js';
@@ -9,7 +10,7 @@ function getNoteElementIfPresent(noteId) {
     if (!noteId) {
         throw new Error('noteId is required');
     }
-    return document.querySelector(`.note[data-note-id="${noteId}"]`);
+    return findNoteElement(noteId);
 }
 
 function reconcileContentBeforeSave(noteElement) {

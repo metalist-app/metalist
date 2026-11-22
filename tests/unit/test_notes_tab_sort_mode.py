@@ -72,6 +72,7 @@ def test_view_diff_returns_400_for_invalid_search_before_undo_reset(
             "visibleBottomRootId": None,
             "findRevealNoteId": None,
             "startAtListEnd": False,
+            "editingInWindow": False,
                 "isUntaggedView": False,
             }
         )

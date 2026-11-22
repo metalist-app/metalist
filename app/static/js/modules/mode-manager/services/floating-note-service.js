@@ -5,18 +5,20 @@ import { rethrowUnexpectedError } from '../../expected-errors.js';
 import { CommandGate } from './command-gate-service.js';
 import { createFloatingNoteElements, applyFloatingNoteRect, getFloatingNoteTitle } from './floating-note-dom.js';
 import { constrainFloatingNoteRect, moveFloatingNoteRect } from './floating-note-layout.js';
-import { hydrateImageFilePreviews } from './file-image-preview-service.js';
-import { hydrateExcalidrawPreviews } from '../../excalidraw/excalidraw-preview-service.js';
 import { ensureAnchorsOpenInNewTabs } from './link-target-service.js';
-import { queueMermaidDiagramRendering } from './mermaid-render-service.js';
-import { hydrateRemoteImageProxies } from './remote-image-proxy-service.js';
 import { downloadFileReference } from './file-reference-service.js';
 import { openFileViewer, opensInViewer } from './file-viewer-service.js';
 import { playMediaFile } from './media-player-service.js';
 import { handleValueButtonClick } from './value-buttons-service.js';
 import { openReferenceInNewTab } from '../events/keyboard-events.js';
 import { copyTextToClipboard, normalizeCopyableText } from '../events/mouse-events.js';
-import { serverRenderedHtml } from '../../server-rendered-html.js';
+import { editedWindowHost, recordPress } from '../../editing-surface.js';
+import { drawWindowNotes, editNoteInWindow } from './floating-note-editing.js';
+import { captureClickAnchor } from './viewport-hold-service.js';
+import { watchFoldability } from './collapse-affordance-service.js';
+import { collapseNote, expandNote } from '../actions/note-actions.js';
+import { galleryElementOf, galleryNoteIdOf, toggleGalleryOutline } from './gallery-view-service.js';
+import { actionDeselectNote } from '../actions/selection-actions.js';
 
 const moduleState = ApplicationState.createFields('floating-note-service', {
     windows: Object.create(null),
@@ -78,6 +80,7 @@ export function closeFloatingNote(id) {
     if (moduleState.order.length === 0) {
         window.clearInterval(moduleState.timer);
         moduleState.timer = null;
+        window.removeEventListener('pointerdown', recordPress, { capture: true });
         for (const type of ISOLATED_EVENTS) window.removeEventListener(type, handleWindowEvent, { capture: true });
         window.removeEventListener('resize', fitWindows);
         window.removeEventListener('blur', finishGesture);
@@ -97,6 +100,8 @@ function fitWindows() {
 
 function startWindowEvents() {
     if (moduleState.listening) return;
+    // Before the windows' own handlers, which stop presses in them reaching the page.
+    window.addEventListener('pointerdown', recordPress, { capture: true });
     for (const type of ISOLATED_EVENTS) window.addEventListener(type, handleWindowEvent, { capture: true });
     window.addEventListener('resize', fitWindows);
     window.addEventListener('blur', finishGesture);
@@ -116,6 +121,7 @@ export async function openFloatingNote(noteId) {
     applyFloatingNoteRect(elements.element, rect);
     mainApp.appendChild(elements.element);
     watchFoldArrows(elements.tree);
+    watchFoldability(elements.tree);
     bringToFront(id);
     startWindowEvents();
     elements.element.focus({preventScroll: true});
@@ -126,18 +132,25 @@ export async function openFloatingNote(noteId) {
 function validateSnapshot(snapshot) {
     if (!snapshot || typeof snapshot !== 'object'
         || typeof snapshot.revision !== 'string' || snapshot.revision.length === 0
-        || typeof snapshot.html !== 'string'
+        || !Array.isArray(snapshot.structure) || snapshot.notes === null || typeof snapshot.notes !== 'object'
         || !['ready', 'unchanged', 'deleted'].includes(snapshot.status)) {
         throw new Error('Invalid floating note response');
     }
-    if ((snapshot.status === 'ready') !== (snapshot.html.length > 0)) {
-        throw new Error('Floating note markup does not match response status');
+    if ((snapshot.status === 'ready') !== (snapshot.structure.length > 0)) {
+        throw new Error('Floating note notes do not match response status');
     }
+}
+
+// What the window draws, to tell a new answer that draws the same apart: each note's version.
+function drawingOf(snapshot) {
+    return snapshot.structure.map(entry => `${entry.id}:${entry.hash}`).join(' ');
 }
 
 async function refreshWindow(id) {
     const entry = moduleState.windows[id];
     if (!entry) return;
+    // A note in it is edited: it shows that, until editing leaves it (case 6).
+    if (editedWindowHost() === entry.element) return;
     const snapshot = await NotesAPI.getFloatingNote(entry.noteId, entry.revision).catch(error => {
         rethrowUnexpectedError(error);
         if (Object.hasOwn(moduleState.windows, id)) entry.status.textContent = 'Unable to refresh. Retrying…';
@@ -152,24 +165,21 @@ async function refreshWindow(id) {
         entry.title.textContent = 'Deleted note';
         entry.title.setAttribute('aria-disabled', 'true');
     }
-    if (snapshot.status === 'unchanged' || entry.markup === snapshot.html) return;
-    entry.markup = snapshot.html;
+    if (snapshot.status === 'unchanged' || entry.markup === drawingOf(snapshot)) return;
+    entry.markup = drawingOf(snapshot);
     const scrollTop = entry.scroll.scrollTop;
-    entry.tree.innerHTML = serverRenderedHtml(snapshot.html);
+    entry.tree.replaceChildren();
+    // As the list draws the notes: folded as saved, galleries as their grid (agreed 2026-11-22).
+    if (snapshot.status === 'ready') drawWindowNotes(entry.tree, snapshot.structure, snapshot.notes, null);
     entry.scroll.scrollTop = scrollTop;
     if (snapshot.status === 'ready') {
         entry.title.textContent = `↗ ${getFloatingNoteTitle(entry.tree)}`;
         entry.title.setAttribute('aria-disabled', 'false');
     }
-    for (const editable of entry.tree.querySelectorAll('[contenteditable]')) editable.setAttribute('contenteditable', 'false');
     for (const control of entry.tree.querySelectorAll('.meta-status-toggle, .meta-markdown-task-toggle, .note-shell-run, input, textarea, select')) {
         control.setAttribute('disabled', '');
     }
     ensureAnchorsOpenInNewTabs(entry.tree);
-    hydrateImageFilePreviews(entry.tree);
-    void hydrateExcalidrawPreviews(entry.tree);
-    hydrateRemoteImageProxies(entry.tree);
-    await queueMermaidDiagramRendering(entry.tree);
 }
 
 export async function refreshFloatingNotes() {
@@ -192,10 +202,39 @@ function handleWindowClick(event, target, id) {
     }
     if (target.closest('.floating-note-close')) {
         event.preventDefault();
+        // A note edited in it is saved and left first.
+        if (editedWindowHost() === moduleState.windows[id].element) {
+            void CommandGate.run('floatingNote.close', async () => {
+                await actionDeselectNote();
+                closeFloatingNote(id);
+            });
+            return;
+        }
         closeFloatingNote(id);
         return;
     }
     if (handleValueButtonClick(event, target)) return;
+    // A fold arrow folds or unfolds the note everywhere, the list too (agreed 2026-11-22).
+    const fold = target.closest('.note-collapse-toggle');
+    if (fold !== null) {
+        event.preventDefault();
+        const folded = fold.closest('.note[data-note-id]');
+        const noteId = folded.dataset.noteId;
+        if (folded.classList.contains('collapsed')) {
+            void CommandGate.run('floatingNote.expand', () => expandNote(noteId));
+        } else {
+            void CommandGate.run('floatingNote.collapse', () => collapseNote(noteId));
+        }
+        return;
+    }
+    // A gallery's switch between its grid and its notes: the same choice as in the list.
+    const gallerySwitch = target.closest('.meta-gallery-switch');
+    if (gallerySwitch !== null) {
+        event.preventDefault();
+        const galleryNoteId = galleryNoteIdOf(galleryElementOf(gallerySwitch));
+        void CommandGate.run('floatingNote.gallerySwitch', () => toggleGalleryOutline(galleryNoteId));
+        return;
+    }
     const credential = target.closest('.meta-credential-value');
     const copyable = target.closest('.meta-copyable');
     if (credential) {
@@ -232,7 +271,32 @@ function handleWindowClick(event, target, id) {
             return;
         }
         void CommandGate.run('floatingNote.download', () => downloadFileReference(file.dataset.fileRefId));
+        return;
     }
+    // A click in a note's text edits it there (case 1).
+    const content = target.closest('.note-content');
+    if (content !== null && !target.closest('a, button, input, select, textarea')) {
+        event.preventDefault();
+        const note = content.closest('.note[data-note-id]');
+        // Where clicked, as the list keeps it: the caret lands on the same text in the note's source.
+        const anchor = captureClickAnchor(note, event.clientX, event.clientY);
+        void CommandGate.run('floatingNote.edit', () => editNoteInWindow(windowToEdit(id), note.dataset.noteId, anchor));
+    }
+}
+
+// A window as floating-note-editing.js edits in it.
+function windowToEdit(id) {
+    const entry = moduleState.windows[id];
+    return {
+        id, noteId: entry.noteId, element: entry.element, tree: entry.tree,
+        // Drawn again from the server once editing leaves it.
+        showNotes: () => {
+            if (!Object.hasOwn(moduleState.windows, id)) return;
+            if (entry.revision !== '') entry.revision = '';
+            if (entry.markup !== '') entry.markup = '';
+            void refreshWindow(id);
+        },
+    };
 }
 
 function handleWindowEvent(event) {
@@ -242,6 +306,11 @@ function handleWindowEvent(event) {
     const id = host.dataset.floatingNoteId;
     const entry = moduleState.windows[id];
     if (!entry) return;
+    // The notes of a window a note is edited in are the editor's: their events go on to it.
+    if (editedWindowHost() === host && path.some(node => node instanceof HTMLElement && node.classList.contains('floating-note-editing-tree'))) {
+        if (event.type === 'pointerdown') bringToFront(id);
+        return;
+    }
     // Stop main-editor delegates at the window capture phase. Native selection,
     // copying, scrolling and external-link activation retain their defaults.
     event.stopPropagation();

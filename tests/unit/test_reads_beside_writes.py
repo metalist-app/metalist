@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from threading import Thread
 
+from app.services.snapshot import WindowState
 import pytest
 
 import app.api.routes.notes as notes_routes
@@ -60,6 +61,10 @@ def notes(monkeypatch: pytest.MonkeyPatch) -> _Notes:
     builder = _built_after_a_delete_tries_to_land(store)
     monkeypatch.setattr(notes_routes, "build_note_preview_markup", builder)
     monkeypatch.setattr(notes_routes, "build_note_fullscreen_markup", builder)
+    # A floating window's notes, built as the delete lands (snapshot.build_window_state).
+    monkeypatch.setattr(notes_routes, "build_window_state", lambda *, window_note_id, editing_note_id: WindowState(
+        structure=[{"id": window_note_id, "html": builder(window_note_id)}], payloads={},
+    ))
     monkeypatch.setattr(notes_routes, "get_current_sync_uuid", lambda: "sync")
     return store
 

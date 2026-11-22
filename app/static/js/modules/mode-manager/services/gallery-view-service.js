@@ -115,10 +115,26 @@ function setOutlineClass(note, isOutline) {
     }
 }
 
+// A gallery in a floating window (its read-only drawing, or its notes while one is edited) is
+// shown as the list shows it: the same saved choice (floating-note-editing.js).
+const WINDOW_GALLERY_NOTES = `.note[data-note-tags*="@gallery"], .${EMBEDDED_GALLERY_CLASS}[data-embed-note-id]`;
+
+/** The galleries in `root` (a floating window's drawing) as grid or outline, as saved. */
+export function markGalleryNotesIn(root) {
+    const outline = new Set(moduleState.outlineNoteIds);
+    for (const note of root.querySelectorAll(WINDOW_GALLERY_NOTES)) {
+        setOutlineClass(note, outline.has(galleryNoteIdOf(note)));
+    }
+}
+
 function markGalleryNotes() {
     const outline = new Set(moduleState.outlineNoteIds);
     for (const note of document.querySelectorAll(GALLERY_NOTES)) {
         setOutlineClass(note, outline.has(galleryNoteIdOf(note)));
+    }
+    for (const host of document.querySelectorAll('.floating-note-window')) {
+        markGalleryNotesIn(host.shadowRoot);
+        for (const editing of host.querySelectorAll(':scope > .floating-note-editing-tree')) markGalleryNotesIn(editing);
     }
 }
 

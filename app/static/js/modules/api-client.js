@@ -1,3 +1,4 @@
+import { findNoteElement, isEditingInWindow } from './editing-surface.js';
 import { localDateText, twoDigits, utcOffsetText } from './local-date-text.js';
 import { HTTP_STATUS } from './http-status.js';
 import { FileEditSessionExpiredError, FileRevisionConflictError, HttpRequestError, NoteLockedElsewhereError, ServerInputRejectedError, rethrowUnexpectedError } from './expected-errors.js';
@@ -1000,7 +1001,7 @@ export const NotesAPI = {
     },
 
     getNoteElement(noteId) {
-        const noteElement = document.querySelector(`.note[data-note-id="${noteId}"]`);
+        const noteElement = findNoteElement(noteId);
         if (!noteElement) {
             throw new Error(`Note not found: ${noteId}`);
         }
@@ -1040,6 +1041,8 @@ export const NotesAPI = {
             visibleBottomRootId: visibleRootRange.bottomRootId,
             // Go to Bottom: the band that ends at the view's last root.
             startAtListEnd,
+            // The edited note is edited in a floating window (editing-surface.js).
+            editingInWindow: noteId !== null && isEditingInWindow(),
         };
 
         const response = await this._apiCall(CONFIG.API.NOTES.VIEW, {
@@ -1465,6 +1468,17 @@ export const NotesAPI = {
             throw new Error('getFloatingNote requires noteId and revision strings');
         }
         return this._apiCall(`${CONFIG.API.NOTES.FLOATING(noteId)}?revision=${encodeURIComponent(revision)}`, {
+            method: 'GET',
+        });
+    },
+
+    // A floating window while one of its notes is edited: its notes as the list draws them, the
+    // edited one drawn for editing; status 'outside' once that note has left the window.
+    async getFloatingNoteEditing(windowNoteId, editingNoteId) {
+        if (typeof windowNoteId !== 'string' || windowNoteId.length === 0 || typeof editingNoteId !== 'string' || editingNoteId.length === 0) {
+            throw new Error('getFloatingNoteEditing requires the window\'s note and the edited note');
+        }
+        return this._apiCall(`${CONFIG.API.NOTES.FLOATING(windowNoteId)}/editing?editingNoteId=${encodeURIComponent(editingNoteId)}`, {
             method: 'GET',
         });
     },

@@ -1,3 +1,4 @@
+import { findNoteElement } from '../../editing-surface.js';
 import { ModeContextInstance as ModeContext } from '../mode-context.js';
 import { stateValuesEqual } from '../../application-state.js';
 import * as Logger from '../mode-logger.js';
@@ -102,7 +103,7 @@ function _applyHistorySelectionState({
 
     let cleanupTarget = null;
     if (typeof priorEditingNoteId === 'string' && priorEditingNoteId.length > 0) {
-        cleanupTarget = document.querySelector(`.note[data-note-id="${priorEditingNoteId}"]`);
+        cleanupTarget = findNoteElement(priorEditingNoteId);
     }
 
     if (!cleanupTarget) {

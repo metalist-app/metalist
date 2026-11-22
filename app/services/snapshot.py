@@ -1751,3 +1751,84 @@ def _embedded_search_results(search: str) -> SearchResults:
 
 search_runner.install(_embedded_search_results)
 
+
+
+@dataclass(frozen=True, slots=True)
+class WindowState:
+    """A floating window's note and the notes under it, as the list draws them: folded as saved,
+    a gallery's pictures in its grid (docs/ui/state-handling.md, "Floating note windows"). The
+    window's note is its tree's root (parentId None), as a window shows it without its ancestors.
+    A note edited in the window is drawn for editing, the notes above it open."""
+
+    structure: List[Dict[str, object]]
+    payloads: Dict[str, Dict[str, object]]
+
+
+def is_in_window(*, window_note_id: str, note_id: str) -> bool:
+    """Whether a floating window of `window_note_id` shows `note_id`: the note itself or a note under it."""
+    current = note_store.get_note(note_id)
+    while current.id != window_note_id:
+        if current.parent_id is None:
+            return False
+        current = note_store.get_note(current.parent_id)
+    return True
+
+
+def _notes_above_in_window(*, window_note_id: str, note_id: str) -> Set[str]:
+    above: Set[str] = set()
+    current = note_store.get_note(note_id)
+    while current.id != window_note_id:
+        assert current.parent_id is not None, "the edited note is in the window"
+        current = note_store.get_note(current.parent_id)
+        above.add(current.id)
+    return above
+
+
+def build_window_state(*, window_note_id: str, editing_note_id: Optional[str]) -> WindowState:
+    """The window's notes; `editing_note_id` (a note in the window) drawn for editing, or None."""
+    if not note_store.has_note(window_note_id):
+        raise ValueError(f"the window's note {window_note_id} is not there")
+    forced_open: Set[str] = set()
+    if editing_note_id is not None:
+        if not is_in_window(window_note_id=window_note_id, note_id=editing_note_id):
+            raise ValueError(f"note {editing_note_id} is not in the window of note {window_note_id}")
+        forced_open = _notes_above_in_window(window_note_id=window_note_id, note_id=editing_note_id)
+    traversal_cache = _SnapshotTraversalCache()
+    embed_render_context = _new_embed_render_context(
+        traversal_cache, is_shown_in_gallery=_shown_in_galleries(search=None, filter_active=False, allowed_note_ids=None),
+    )
+    structure: List[Dict[str, object]] = []
+    payloads: Dict[str, Dict[str, object]] = {}
+    pending: List[Tuple[Optional[str], List[str], int]] = [(None, [window_note_id], 0)]
+    while pending:
+        parent_id, sibling_ids, index = pending.pop()
+        note_id = sibling_ids[index]
+        rec = traversal_cache.get_note(note_id)
+        prev_id: Optional[str] = None
+        if index > 0:
+            prev_id = sibling_ids[index - 1]
+        next_id: Optional[str] = None
+        if index + 1 < len(sibling_ids):
+            next_id = sibling_ids[index + 1]
+        rendered_content, flags = _render_view_note(
+            rec, editing_note_id=editing_note_id, is_search_redacted=False, force_uncollapsed_ids=forced_open,
+            filter_active=False, allowed_note_ids=None, traversal_cache=traversal_cache,
+            embed_render_context=embed_render_context,
+        )
+        note_hash = _compute_hash(rendered_content, rec.tags, rec.proposed_tags, flags, parent_id, prev_id, next_id)
+        structure.append({"id": note_id, "parentId": parent_id, "prevId": prev_id, "nextId": next_id, "hash": note_hash})
+        payloads[note_id] = {
+            "content": rendered_content,
+            "tags": rec.tags,
+            "proposedTags": rec.proposed_tags,
+            "flags": flags,
+            "metadata": {"createdAt": flags["createdAt"], "updatedAt": flags["updatedAt"]},
+            "hash": note_hash,
+        }
+        # A folded note shows none under it, as in the list.
+        if not flags["isCollapsed"]:
+            child_ids = traversal_cache.get_children(note_id)
+            pending.extend((note_id, child_ids, child_index) for child_index in reversed(range(len(child_ids))))
+    if editing_note_id is not None:
+        assert payloads[editing_note_id]["flags"]["isEditing"] is True
+    return WindowState(structure=structure, payloads=payloads)

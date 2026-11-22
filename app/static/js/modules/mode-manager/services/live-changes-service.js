@@ -9,6 +9,7 @@
 // (case 8). A change waits while the user is busy with something it would disturb: scrolling, a drag,
 // a menu, a dialog, Find, a command running, a search being typed, a reference page opening (cases 9
 // and 10). A change of this view's own is never taken again (noticeOwnContextsChange).
+import { findNoteElement } from '../../editing-surface.js';
 import { ApplicationState } from '../../application-state.js';
 import { ErrorHandler } from '../../error-handler.js';
 import { rethrowUnexpectedError } from '../../expected-errors.js';
@@ -194,7 +195,7 @@ async function applyChanges() {
 // window's top (cases 2 to 6).
 function captureWhatStaysStill() {
     if (ModeContext.isEditing) {
-        const editedNote = document.querySelector(`.note[data-note-id="${CSS.escape(ModeContext.currentNoteId)}"]`);
+        const editedNote = findNoteElement(ModeContext.currentNoteId);
         if (editedNote instanceof HTMLElement) {
             return captureNoteAnchor(editedNote);
         }

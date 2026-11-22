@@ -1,3 +1,4 @@
+import { findNoteContentElement } from '../../editing-surface.js';
 import { ApplicationState } from '../../application-state.js';
 import { NotesAPI } from '../../api-client.js';
 import { ModeContextInstance as ModeContext } from '../mode-context.js';
@@ -22,7 +23,7 @@ const moduleState = ApplicationState.createFields('editing-image-size-service', 
 });
 
 function editedContent(noteId) {
-    const content = document.querySelector(`.note[data-note-id="${noteId}"] > .note-content`);
+    const content = findNoteContentElement(noteId);
     if (!(content instanceof HTMLElement)) {
         throw new Error(`Edited note content missing: ${noteId}`);
     }

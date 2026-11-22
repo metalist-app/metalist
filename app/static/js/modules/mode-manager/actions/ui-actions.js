@@ -1,3 +1,5 @@
+import { findListNoteElement, isEditingInWindow, markNoteEditedInWindow, noticeListRefreshedWhileEditingInWindow } from '../../editing-surface.js';
+
 import { ApplicationState } from '../../application-state.js';
 import { ModeContextInstance as ModeContext } from '../mode-context.js';
 import * as Logger from '../mode-logger.js';
@@ -344,8 +346,11 @@ export async function actionRefreshAndMaybeSelect(options) {
         }
         let editingFocus = null;
         let isFocusElsewhere = false;
-        if (keepEditingFocus && noteId !== null && ModeContext.isEditing) {
-            const editedNote = document.querySelector(`.note[data-note-id="${noteId}"]`);
+        // A note edited in a floating window: the list draws it as a note edited elsewhere and
+        // leaves the editing to the window (floating-note-editing.js).
+        const editsInWindow = noteId !== null && isEditingInWindow();
+        if (keepEditingFocus && noteId !== null && ModeContext.isEditing && !editsInWindow) {
+            const editedNote = findListNoteElement(noteId);
             if (editedNote instanceof HTMLElement) {
                 editingFocus = captureEditingFocus(editedNote);
                 isFocusElsewhere = leaveFocusElsewhere && !editedNote.contains(document.activeElement);
@@ -367,10 +372,13 @@ export async function actionRefreshAndMaybeSelect(options) {
         holdViewportRoot(viewportRoot);
 
         // Removal animations retain DOM nodes after the diff removes their view membership.
-        const editingNoteElement = noteId && ModeContext.hasNoteHash(noteId)
-            ? document.querySelector(`.note[data-note-id="${noteId}"]`)
+        const editingNoteElement = noteId && ModeContext.hasNoteHash(noteId) && !editsInWindow
+            ? findListNoteElement(noteId)
             : null;
-        syncTagBar(editingNoteElement);
+        markNoteEditedInWindow(snapshot.windowEditingNoteId);
+        if (!editsInWindow) {
+            syncTagBar(editingNoteElement);
+        }
 
         // If this is initial page load, fade in the entire app
         if (ModeContext.isInitialPageLoad) {
@@ -384,7 +392,12 @@ export async function actionRefreshAndMaybeSelect(options) {
         let contentHtml = null;
         let result = null;
 
-        if (noteId) {
+        if (editsInWindow) {
+            // The window's editor holds the note; its text is what the editing caller compares.
+            result = DOMUtils.getNoteContentHTML(DOMUtils.getNoteById(noteId));
+            // A note added or moved there: the window draws its notes again (floating-note-editing.js).
+            noticeListRefreshedWhileEditingInWindow();
+        } else if (noteId) {
             const noteElement = editingNoteElement;
             if (!noteElement) {
                 Logger.logAction('refresh_hidden_filtered_editing_note', {

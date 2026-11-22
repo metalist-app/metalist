@@ -1,3 +1,4 @@
+import { isCopyOfNoteEditedInWindow } from '../../editing-surface.js';
 import { half } from '../../half.js';
 import { ApplicationState } from '../../application-state.js';
 import { rethrowUnexpectedError } from '../../expected-errors.js';
@@ -143,6 +144,12 @@ export function initMouseEvents() {
     Logger.logInit('Mouse events handler');
 }
 
+
+// Whether a click on `noteElement` is in the note being edited: not when it is the list's copy
+// of a note edited in a floating window, where a click moves the editing to the list.
+function isEditedHere(noteId, noteElement) {
+    return ModeContext.isEditingNote(noteId) && !isCopyOfNoteEditedInWindow(noteElement);
+}
 function handleDiagramDoubleClick(event) {
     if (event.button !== 0) {
         return;
@@ -187,7 +194,7 @@ function scheduleDiagramClickEdit(event) {
     };
     moduleState.pendingDiagramClickEdit = window.setTimeout(() => {
         moduleState.pendingDiagramClickEdit = null;
-        if (ModeContext.isEditingNote(noteId)) {
+        if (isEditedHere(noteId, noteElement)) {
             return;
         }
         if (ModeContext.isSearching) {
@@ -441,7 +448,7 @@ function handleNoteShellMouseDown(event, noteElement) {
         initialCaretVisibility: 'visible',
         clickAnchor: captureClickAnchor(noteElement, event.clientX, event.clientY),
     };
-    if (!ModeContext.isEditingNote(noteId)) {
+    if (!isEditedHere(noteId, noteElement)) {
         if (ModeContext.currentNoteId) {
             // Keys typed while it opens are kept and typed into it (type-ahead-service.js);
             // only the command that runs opens it (a click right after a mouse-down finds it busy).
@@ -1842,7 +1849,7 @@ function handleClick(event) {
                 initialCaretVisibility: 'visible',
                 clickAnchor: captureClickAnchor(noteElement, event.clientX, event.clientY),
             };
-            if (!ModeContext.isEditingNote(noteId)) {
+            if (!isEditedHere(noteId, noteElement)) {
                 // Don't calculate or save cursor position when entering edit mode
                 // The click position on rendered content (e.g., LaTeX) doesn't map meaningfully
                 // to cursor position in source text
@@ -1953,7 +1960,7 @@ function handleClick(event) {
             initialCaretVisibility: 'visible',
             clickAnchor: captureClickAnchor(noteElement, event.clientX, event.clientY),
         };
-        if (!ModeContext.isEditingNote(noteId)) {
+        if (!isEditedHere(noteId, noteElement)) {
             if (ModeContext.currentNoteId) {
                 // Keys typed while it opens are kept and typed into it (type-ahead-service.js);
                 // only the command that runs opens it (a click right after a mouse-down finds it busy).

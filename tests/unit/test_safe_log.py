@@ -261,7 +261,7 @@ with TestClient(app, base_url="http://localhost", raise_server_exceptions=False)
         view = client.post(API_PREFIX + "/notes/view", headers=headers, json={
             "clientId": "client", "editingNoteId": None, "findRevealNoteId": None, "search": search,
             "tabId": tab_id, "undoContext": "client", "tabViewEmpty": False, "visibleTopRootId": None,
-            "visibleBottomRootId": None, "isUntaggedView": False, "startAtListEnd": False,
+            "visibleBottomRootId": None, "isUntaggedView": False, "startAtListEnd": False, "editingInWindow": False,
         })
         assert view.status_code == 200, view.text
     client.post(API_PREFIX + "/notes/search-suggestions", headers=headers, json={"query": MARKER, "windowDays": []})

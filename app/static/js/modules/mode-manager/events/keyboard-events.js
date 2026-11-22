@@ -1,3 +1,4 @@
+import { findNoteElement, isEditedWindowsOwnNote } from '../../editing-surface.js';
 import { KIB, MIB } from '../../byte-sizes.js';
 import { MS_PER_SECOND } from '../../time-units.js';
 import { escapeHtml } from '../../html-escape.js';
@@ -1523,6 +1524,11 @@ async function handleCutNoteShortcut(event) {
     event.preventDefault();
     event.stopPropagation();
 
+    // A floating window's own note is not cut out of its window (the maintainer, 2026-11-22).
+    if (isEditedWindowsOwnNote(currentNoteId)) {
+        return;
+    }
+
     // Other notes referencing it: asked first; the dialog leaves edit mode.
     const decision = await confirmRemovingReferencedNote(currentNoteId, 'cut');
     if (decision === null || decision === 'cancelled') {
@@ -2235,7 +2241,7 @@ function resolveEditingDropTarget(event) {
     if (!ModeContext.isEditing || !ModeContext.currentNoteId) {
         return null;
     }
-    const noteElement = document.querySelector(`.note[data-note-id="${ModeContext.currentNoteId}"]`);
+    const noteElement = findNoteElement(ModeContext.currentNoteId);
     if (!(noteElement instanceof HTMLElement)) {
         return null;
     }
@@ -2259,7 +2265,7 @@ function getCurrentEditableDropTarget() {
         throw new Error('Current editable drop target requires current note id');
     }
 
-    const noteElement = document.querySelector(`.note[data-note-id="${currentNoteId}"]`);
+    const noteElement = findNoteElement(currentNoteId);
     if (!(noteElement instanceof HTMLElement)) {
         throw new Error(`Could not find current note element for drop target: ${currentNoteId}`);
     }

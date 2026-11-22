@@ -29,6 +29,7 @@ def _view_request(undo_context: str) -> dict[str, object]:
             "visibleBottomRootId": None,
             "findRevealNoteId": None,
             "startAtListEnd": False,
+            "editingInWindow": False,
         "isUntaggedView": False,
     }
 

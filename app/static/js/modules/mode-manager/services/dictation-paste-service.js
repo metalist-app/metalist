@@ -1,3 +1,4 @@
+import { findNoteElement } from '../../editing-surface.js';
 import { ApplicationState } from '../../application-state.js';
 import { CONFIG } from '../../config.js';
 import { HttpRequestError } from '../../expected-errors.js';
@@ -246,7 +247,7 @@ export function undoDictatedNotePasteTags(event) {
         return false;
     }
     moduleState.notePasteUndo = null;
-    const noteElement = document.querySelector(`.note[data-note-id="${link.noteId}"]`);
+    const noteElement = findNoteElement(link.noteId);
     const tagBar = noteElement.querySelector('.note-tag-bar-input');
     if (tagBar.value !== link.tagBarAfter) {
         return false;

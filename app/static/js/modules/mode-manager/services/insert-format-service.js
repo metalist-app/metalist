@@ -1,3 +1,4 @@
+import { findNoteElement } from '../../editing-surface.js';
 import { ModeContextInstance as ModeContext } from '../mode-context.js';
 import { getTagBarValue, setTagBarValue } from './tag-bar-service.js';
 import { appendStyleTagToken } from './add-style-service.js';
@@ -54,7 +55,7 @@ async function insertInto(noteId, range, kind) {
     if (!ModeContext.isEditingNote(noteId)) {
         throw new Error(`Insert ${kind} needs the note being edited: ${noteId}`);
     }
-    const noteElement = document.querySelector(`.note[data-note-id="${noteId}"]`);
+    const noteElement = findNoteElement(noteId);
     const content = noteElement === null ? null : noteElement.querySelector(':scope > .note-content');
     if (!(content instanceof HTMLElement) || !(range instanceof Range) || !content.contains(range.startContainer)) {
         throw new Error('Insert goes in the text of the note being edited');
