@@ -164,6 +164,24 @@ export async function waitForViewRequestIdle() {
     }
 }
 
+/**
+ * Runs `changeTabs`, which asks the server before it changes the active tab, with no notes.view
+ * request under way or started meanwhile: one in flight lands first, and one asked for during it
+ * waits its turn, as behind another view request. Waiting first and then asking the server left a
+ * gap: a request started in it (the infinite scroll, a poll) came back to another tab, and its
+ * response had nowhere to go (GitHub's reference-views run in Firefox, 2026-11-22).
+ */
+export async function holdViewRequestsWhile(changeTabs) {
+    if (typeof changeTabs !== 'function') throw new Error('holdViewRequestsWhile requires what changes the tabs');
+    while (moduleState.viewRequestInFlight) {
+        await waitForViewRequestIdle();
+    }
+    moduleState.viewRequestInFlight = true;
+    return changeTabs().finally(() => {
+        moduleState.viewRequestInFlight = false;
+    });
+}
+
 // Whether a view request is on its way. Only the infinite-scroll poll asks: it repeats every
 // POLL_INTERVAL_MS, so it skips a round rather than wait.
 export function isViewRequestInFlight() {
@@ -179,18 +197,6 @@ export async function actionRefreshAndMaybeSelect(options) {
         isEditing: ModeContext.isEditing
     });
 
-    let noteId = null;
-    if (ModeContext.isEditing) {
-        noteId = ModeContext.currentNoteId;
-        if (typeof noteId !== 'string' || noteId.length === 0) {
-            throw new Error('Invariant violation: ModeContext.isEditing is true but currentNoteId is missing');
-        }
-    }
-    const requestTabId = ModeContext.activeTabId;
-    const requestSearchQuery = ModeContext.getExecutedSearchQuery(requestTabId);
-    if (typeof requestSearchQuery !== 'string') {
-        throw new Error('ModeContext.getExecutedSearchQuery() must return a string');
-    }
     if (Object.prototype.hasOwnProperty.call(options, 'requireExecution')) {
         throw new Error('requireExecution is gone: every refresh waits for a request in flight, then runs');
     }
@@ -257,8 +263,23 @@ export async function actionRefreshAndMaybeSelect(options) {
     // that request was built from the state before the caller's change, and callers use what
     // this one returns (docs/ui/state-handling.md, "Refreshes in flight"). Dropping it crashed
     // switching notes and left deleted notes on screen (2026-10-26).
-    if (moduleState.viewRequestInFlight) {
+    while (moduleState.viewRequestInFlight) {
         await waitForViewRequestIdle();
+    }
+
+    // Read only now: what went first may have changed the tab shown or left edit mode, and a
+    // request for the tab as it was came back to another ("arrived after the active tab changed").
+    let noteId = null;
+    if (ModeContext.isEditing) {
+        noteId = ModeContext.currentNoteId;
+        if (typeof noteId !== 'string' || noteId.length === 0) {
+            throw new Error('Invariant violation: ModeContext.isEditing is true but currentNoteId is missing');
+        }
+    }
+    const requestTabId = ModeContext.activeTabId;
+    const requestSearchQuery = ModeContext.getExecutedSearchQuery(requestTabId);
+    if (typeof requestSearchQuery !== 'string') {
+        throw new Error('ModeContext.getExecutedSearchQuery() must return a string');
     }
 
     if (resetViewCacheBeforeFetch) {

@@ -3829,6 +3829,13 @@ async function settleViewRequestsBeforeTabChange() {
     await waitForViewRequestIdle();
 }
 
+// For a tab change that asks the server first: no view request starts while it does
+// (holdViewRequestsWhile, ui-actions.js).
+async function changeTabsWithNoViewRequest(changeTabs) {
+    const { holdViewRequestsWhile } = await import('../actions/ui-actions.js');
+    await holdViewRequestsWhile(changeTabs);
+}
+
 export async function switchToTabContext(tabId, options) {
 	if (options === null || typeof options !== 'object') {
 		throw new Error('switchToTabContext requires options object');
@@ -4674,8 +4681,10 @@ export async function adoptClosedReferencePages() {
     // Where each tab was left reaches the server first (it takes a save still naming the closed
     // pages): scroll is saved about once a second, and the search would come back at the top.
     snapshotActiveTabScrollState();
-    await persistTabStateSnapshot();
-    await reloadTabStateFromServer();
+    await changeTabsWithNoViewRequest(async () => {
+        await persistTabStateSnapshot();
+        await reloadTabStateFromServer();
+    });
     const isShowingAnotherTab = ModeContext.activeTabId !== shownBefore;
     // Read before the notes change: emptying the page lets the window fall to the top, and the
     // scroll watcher would take that for where the search was left.
@@ -4743,8 +4752,10 @@ export async function adoptSharedSearchContexts() {
     // Where this view was left reaches the server first; the server keeps any search another
     // view changed (tab_state.py, update).
     snapshotActiveTabScrollState();
-    await persistTabStateSnapshot();
-    await reloadTabStateFromServer();
+    await changeTabsWithNoViewRequest(async () => {
+        await persistTabStateSnapshot();
+        await reloadTabStateFromServer();
+    });
     updateSearchContextsList();
     const isShowingAnotherTab = ModeContext.activeTabId !== shownBefore;
     // A search typed while this fetched stands (interaction principle 2: only the user's action
@@ -4800,8 +4811,9 @@ export async function adoptSharedSearchContexts() {
 // After Rename tag renamed a tag in search contexts' searches (rename_tag.py): the tabs, the search box
 // and the list of search contexts show the new name, and the view runs the renamed search.
 export async function adoptRenamedSearches() {
-    await settleViewRequestsBeforeTabChange();
-    await reloadTabStateFromServer();
+    await changeTabsWithNoViewRequest(async () => {
+        await reloadTabStateFromServer();
+    });
     ModeContext.clearActiveTabDiffCacheForSearchExecution(ModeContext.searchQuery, { forceClear: true });
     syncSearchInputField();
     updateSearchContextsList();

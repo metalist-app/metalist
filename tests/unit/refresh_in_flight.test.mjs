@@ -43,7 +43,7 @@ test('no caller asks for the old requireExecution option', () => {
 test('a refresh in flight is waited for, never answered with nothing', () => {
     const uiActions = SOURCES.find(({ path }) => path === UI_ACTIONS).source;
     const start = uiActions.indexOf('export async function actionRefreshAndMaybeSelect');
-    const inFlight = uiActions.indexOf('if (moduleState.viewRequestInFlight) {', start);
+    const inFlight = uiActions.indexOf('while (moduleState.viewRequestInFlight) {', start);
     assert(start >= 0 && inFlight > start, 'the refresh checks for a request in flight');
     const branch = uiActions.slice(inFlight, uiActions.indexOf('}', inFlight));
     assert.match(branch, /await waitForViewRequestIdle\(\);/);

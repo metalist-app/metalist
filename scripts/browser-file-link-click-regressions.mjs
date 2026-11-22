@@ -228,14 +228,9 @@ async function editingCase(page, ids) {
   await leaveEditing(page);
 }
 
-async function floatingWindowCase(page, ids) {
-  await page.evaluate(async hostId => {
-    const {openFloatingNote} = await import('/static/js/modules/mode-manager/services/floating-note-service.js');
-    await openFloatingNote(hostId);
-  }, ids.hostId);
-  await page.waitForSelector('.floating-note-window');
-  await idle(page);
-  const geometry = await page.$eval('.floating-note-window', (host, half) => {
+// Where the file card's parts are in the floating window's read-only drawing.
+function floatingGeometry(page) {
+  return page.$eval('.floating-note-window', (host, half) => {
     const title = host.shadowRoot.querySelector('.note-file-reference-title');
     const range = document.createRange();
     range.selectNodeContents(title);
@@ -247,20 +242,48 @@ async function floatingWindowCase(page, ids) {
       name: {x: (line.left + line.right) * half, y: (line.top + line.bottom) * half},
       open: {x: (open.left + open.right) * half, y: (open.top + open.bottom) * half},
       beside: {x: actionsEnd.right + (content.right - actionsEnd.right) * half, y: (actionsEnd.top + actionsEnd.bottom) * half},
-      gap: content.right - actionsEnd.right,
+      // In whole pixels: the card's own margin, which a window placed at a fraction of a pixel
+      // measures a hair under.
+      gap: Math.round(content.right - actionsEnd.right),
     };
   }, HALF);
+}
+
+// Whether `noteId` is being edited in the floating window.
+function isEditedInWindow(page, noteId) {
+  return page.evaluate(async id => {
+    const {ModeContextInstance: mode} = await import('/static/js/modules/mode-manager/mode-context.js');
+    const {isEditingInWindow} = await import('/static/js/modules/editing-surface.js');
+    return mode.isEditing && mode.currentNoteId === id && isEditingInWindow();
+  }, noteId);
+}
+
+// In a floating window the card acts as in the list: Open opens the viewer, and a click on the
+// name or beside the card edits the note, there (since notes are edited in windows, 2026-11-22),
+// downloading and opening nothing.
+async function floatingWindowCase(page, ids) {
+  await page.evaluate(async hostId => {
+    const {openFloatingNote} = await import('/static/js/modules/mode-manager/services/floating-note-service.js');
+    await openFloatingNote(hostId);
+  }, ids.hostId);
+  await page.waitForSelector('.floating-note-window');
+  await idle(page);
+  let geometry = await floatingGeometry(page);
   assert.ok(geometry.gap >= MIN_FLOATING_GAP_PX, `the floating window leaves room beside the card: ${JSON.stringify(geometry)}`);
-  assert.equal(await downloadsDuring(page, () => page.mouse.click(geometry.name.x, geometry.name.y)), 0,
-    'floating window, click on the name: downloads nothing');
-  assert.equal(await viewerIsOpen(page), false, 'floating window, click on the name: opens nothing');
   assert.equal(await downloadsDuring(page, () => page.mouse.click(geometry.open.x, geometry.open.y)), 0,
     'floating window, click on Open: downloads nothing');
   await page.waitForSelector('.file-viewer-overlay', {timeout: 10000});
   await closeViewer(page);
-  assert.equal(await downloadsDuring(page, () => page.mouse.click(geometry.beside.x, geometry.beside.y)), 0,
-    'floating window, click right of the card: does not download');
-  assert.equal(await viewerIsOpen(page), false, 'floating window, click right of the card: opens nothing');
+  for (const [spot, label] of [['name', 'on the name'], ['beside', 'right of the card']]) {
+    geometry = await floatingGeometry(page);
+    assert.equal(await downloadsDuring(page, () => page.mouse.click(geometry[spot].x, geometry[spot].y)), 0,
+      `floating window, click ${label}: downloads nothing`);
+    await idle(page);
+    assert.equal(await viewerIsOpen(page), false, `floating window, click ${label}: opens nothing`);
+    assert.equal(await isEditedInWindow(page, ids.hostId), true, `floating window, click ${label}: edits the note there`);
+    // As in the list, a caret in the file's name may take a first Escape for itself.
+    await leaveEditing(page);
+  }
   await page.evaluate(async () => {
     const {closeAllFloatingNotes} = await import('/static/js/modules/mode-manager/services/floating-note-service.js');
     closeAllFloatingNotes();
