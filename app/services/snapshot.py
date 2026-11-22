@@ -1800,6 +1800,7 @@ def build_window_state(*, window_note_id: str, editing_note_id: Optional[str]) -
     structure: List[Dict[str, object]] = []
     payloads: Dict[str, Dict[str, object]] = {}
     pending: List[Tuple[Optional[str], List[str], int]] = [(None, [window_note_id], 0)]
+    is_edited_note_drawn = False
     while pending:
         parent_id, sibling_ids, index = pending.pop()
         note_id = sibling_ids[index]
@@ -1825,10 +1826,12 @@ def build_window_state(*, window_note_id: str, editing_note_id: Optional[str]) -
             "metadata": {"createdAt": flags["createdAt"], "updatedAt": flags["updatedAt"]},
             "hash": note_hash,
         }
+        if note_id == editing_note_id:
+            assert flags["isEditing"] is True
+            is_edited_note_drawn = True
         # A folded note shows none under it, as in the list.
         if not flags["isCollapsed"]:
             child_ids = traversal_cache.get_children(note_id)
             pending.extend((note_id, child_ids, child_index) for child_index in reversed(range(len(child_ids))))
-    if editing_note_id is not None:
-        assert payloads[editing_note_id]["flags"]["isEditing"] is True
+    assert is_edited_note_drawn or editing_note_id is None, "the edited note is drawn in its window"
     return WindowState(structure=structure, payloads=payloads)
