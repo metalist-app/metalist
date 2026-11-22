@@ -1,7 +1,7 @@
 // Runs the whole browser smoke in parallel: `core` (the full smoke's own steps) and every
-// focused suite once, several at a time. Each run already has its own server, free ports
-// and temporary namespace (browser-smoke.mjs), so runs cannot disturb one another or the
-// user's own MetaList.
+// focused suite once, several at a time. Each run has its own server and temporary namespace
+// (browser-smoke.mjs) on ports this runner picks for it, never two runs the same
+// (free-ports.mjs), so runs cannot disturb one another or the user's own MetaList.
 //
 //   node scripts/run-browser-suites.mjs --browser chrome --workers 6
 //   node scripts/run-browser-suites.mjs --browser firefox --workers 2 --shard 3/10
@@ -23,6 +23,7 @@ import {constants} from 'node:os';
 import {join} from 'node:path';
 import {parseArgs} from 'node:util';
 import {FOCUSED_SUITES} from './browser-suite-names.mjs';
+import {HTTP_PORT_VARIABLE, HTTPS_PORT_VARIABLE, pickPortPair} from './free-ports.mjs';
 import {makeRunFolder, removeRunFolder, stopAndWait, sweepStaleRunFolders} from './run-folders.mjs';
 
 const CORE = 'core';
@@ -87,12 +88,17 @@ function seconds(fromMs) {
   return ((performance.now() - fromMs) / MS_PER_SECOND).toFixed(1);
 }
 
+// Every port handed to a run so far; none is handed out twice (free-ports.mjs).
+const handedOutPorts = new Set();
+
 // Runs one suite to the end, in `running` while it goes; resolves with its outcome, never rejects.
-function runSuite(suite, running) {
+async function runSuite(suite, running) {
   const logPath = join(directory, `${suite}.log`);
+  const ports = await pickPortPair(handedOutPorts);
   const log = createWriteStream(logPath);
   const runStartedAt = performance.now();
-  const env = {...process.env, BROWSER_TEST_BROWSER: options.browser, BROWSER_TEST_SUITE: suite};
+  const env = {...process.env, BROWSER_TEST_BROWSER: options.browser, BROWSER_TEST_SUITE: suite,
+    [HTTP_PORT_VARIABLE]: String(ports.http), [HTTPS_PORT_VARIABLE]: String(ports.https)};
   const child = spawn(process.execPath, ['scripts/browser-smoke.mjs'], {env, stdio: ['ignore', 'pipe', 'pipe']});
   running.add(child);
   child.once('exit', () => running.delete(child));

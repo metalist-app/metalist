@@ -9,13 +9,13 @@ import {createHash} from 'node:crypto';
 import {spawn} from 'node:child_process';
 import {writeFile, readFile} from 'node:fs/promises';
 import {join, resolve} from 'node:path';
-import {createServer} from 'node:net';
 import {setTimeout as delay} from 'node:timers/promises';
 import puppeteer from 'puppeteer';
 import {assertInstalledDriverIsPinned} from './browser-driver-pin.mjs';
 import {closeBrowser, installedBrowserExecutable} from './installed-browser.mjs';
 import {assertNoLoopStalls} from './browser-loop-stalls.mjs';
 import {stopChildrenOnExitSignals} from './stop-children-on-exit.mjs';
+import {portsForRun} from './free-ports.mjs';
 import {makeRunFolder, removeRunFolder, stopAndWait, sweepStaleRunFolders} from './run-folders.mjs';
 import {checkPastedHeadingFormatting} from './browser-formatting-regressions.mjs';
 import {checkAdditionalStateTransitions, checkEditingShortcutSequences} from './browser-state-regressions.mjs';
@@ -146,17 +146,10 @@ const SERVER_STOP_GRACE_MS = 5000;
 const RUN_FOLDER_PREFIX = 'metalist-browser-';
 await sweepStaleRunFolders(RUN_FOLDER_PREFIX, Date.now());
 const directory = await makeRunFolder(RUN_FOLDER_PREFIX);
-// Free ports for HTTP and HTTPS: the user's own MetaList keeps its usual ports (HTTPS 8443).
-async function freePort() {
-  const probe = createServer();
-  await new Promise(resolve => probe.listen(0, '127.0.0.1', resolve));
-  const freeTcpPort = probe.address().port;
-  await new Promise(resolve => probe.close(resolve));
-  return freeTcpPort;
-}
-const port = await freePort();
-let httpsPort = await freePort();
-while (httpsPort === port) httpsPort = await freePort();
+// Free ports for HTTP and HTTPS (free-ports.mjs): the user's own MetaList keeps its usual
+// ports (HTTPS 8443). Under run-browser-suites.mjs the runner picks them, so runs side by
+// side never share one.
+const {http: port, https: httpsPort} = await portsForRun(process.env);
 const origin = `http://127.0.0.1:${port}`;
 const env = {...process.env};
 for (const key of Object.keys(env)) {
