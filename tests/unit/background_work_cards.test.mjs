@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
+import { firstSeenTimes } from '../../app/static/js/modules/mode-manager/services/background-work-seen.js';
 import { workProgressParts, workProgressText } from '../../app/static/js/modules/mode-manager/services/background-work-text.js';
 
 // Background work says how far it got, how long it has run, and about how long is left (the
@@ -34,4 +35,26 @@ test('a card has no time left before an estimate', () => {
 test('long work reads in hours', () => {
     assert.equal(workProgressText({ key: 'file-texts', label: 'Reading PDF text', done: 100, total: 300, elapsedSeconds: 1900 }),
         'Reading PDF text: 100 of 300 · 31:40 so far, about 1:03:20 left');
+});
+
+// The server lists work in the order it happens to have it. The same pieces listed in another
+// order are no change (GitHub, 2026-11-21: "Redundant state change: background-work-cards.firstSeenAt"
+// in Firefox, where the comparison went by the order of the keys).
+test('the same work listed in another order is no change', () => {
+    const reading = { key: 'file-texts' };
+    const importing = { key: 'import' };
+    const firstListing = 5000;
+    const laterListing = 5500;
+    const both = firstSeenTimes(firstSeenTimes(Object.freeze({}), [reading], firstListing), [reading, importing], firstListing);
+    assert.deepEqual(both, { 'file-texts': firstListing, import: firstListing });
+    assert.equal(firstSeenTimes(both, [importing, reading], laterListing), both);
+});
+
+test('work keeps the time it was first seen, new work gets now, work gone is dropped', () => {
+    const firstListing = 5000;
+    const laterListing = 5500;
+    const earlier = Object.freeze({ 'file-texts': firstListing });
+    assert.deepEqual(firstSeenTimes(earlier, [{ key: 'file-texts' }, { key: 'import' }], laterListing),
+        { 'file-texts': firstListing, import: laterListing });
+    assert.deepEqual(firstSeenTimes(earlier, [], laterListing), {});
 });
