@@ -2,6 +2,20 @@
 
 What changed in each MetaList release, newest first.
 
+## Changes in 0.35.0
+
+- **Notes are edited inside a floating window.** Click a note's text in a floating window to edit it there, with the whole editor: the tag bar, `[[` links, formatting, suggestions and the keys for adding, moving and indenting notes. `Escape` leaves the note; a second `Escape` closes the window. The list behind shows a pencil on the note being edited.
+- A floating window draws its notes as the list does: folded as saved, with fold arrows that fold the note everywhere, and a gallery as its grid.
+- **Notes drag inside a floating window**, as in the list: up or down among the notes beside them, right to go under the note above, left to come out one level. Nothing drags out of the window, and a drag near its top or bottom edge scrolls it.
+- Right-clicking a note in a floating window edits it there and opens the note menu.
+- The window's own note takes no sibling and cannot be deleted from inside the window: either would put the result outside it.
+- The window's title is no longer a link to a reference view: the whole bar drags the window.
+- **A copied note with a diagram gets its own diagram.** Pasting a note that holds an Excalidraw drawing makes a new, identical drawing for the pasted note, so editing one no longer changes the other.
+- The password count behind the Password Audit reminder is much faster in large vaults, which could slow expanding a note right after starting.
+- Fixed: the Password Audit failed with an error when a password was longer than 72 characters.
+- Fixed: a style put on part of a line (a highlight, a colour) stopped where bold text ended when it started inside the bold text.
+- Fixed in 0.34.0, left out of its notes: an error could show when background work was listed in a different order than before.
+
 ## Changes in 0.34.0
 
 - **Wildcards in search.** A `*` in a tag term stands for any letters: `*burger*` finds notes with a tag containing "burger" (`cheeseburger`, `burger-night`), `burger*` tags that start with it, `*burger` tags that end with it. Capitals are ignored and `-*burger*` leaves those notes out. It matches tags only, a tag's value included, never words in a note's text. A search with a wildcard takes no new note at its top, since there is no single tag to give it.
