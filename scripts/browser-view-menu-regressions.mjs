@@ -21,7 +21,7 @@ const REQUESTS_QUIET_MS = 300;
 const FRAMES_TO_SETTLE = 3;
 // Add or Remove Tag… since 2026-11-11 (docs/ui/command-palette.md).
 const EXPECTED_ROWS = [
-  'Add', 'Undo', 'Redo', 'Go to', 'Outline', 'Add or Remove Tag…', 'View', 'Sort by', 'Date Range', 'Notes with Files', 'Themes',
+  'Add', 'Undo', 'Redo', 'Go to', 'Outline', 'Add or Remove Tag…', 'View', 'Sort by', 'Date Range', 'Notes with Files', 'Notes with Links', 'Themes',
   'Open', 'Export & Print', 'Log Out…',
 ];
 

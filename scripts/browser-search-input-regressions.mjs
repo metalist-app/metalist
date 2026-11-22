@@ -120,7 +120,7 @@ async function rightClickSearch(page, where) {
   return labels;
 }
 
-const SEARCH_BOX_MENU = ['View', 'Sort by', 'Date Range', 'Notes with Files'];
+const SEARCH_BOX_MENU = ['View', 'Sort by', 'Date Range', 'Notes with Files', 'Notes with Links'];
 
 export async function checkSearchBarMenu(page) {
   await page.reload();
