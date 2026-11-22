@@ -169,6 +169,58 @@ async function saveOutline(noteId, isOutline) {
     await CommandPalette.applyPreference(OUTLINE_PREFERENCE, JSON.stringify(noteIds));
 }
 
+const LISTED_NOTE_SELECTOR = '.note[data-note-id]';
+const GALLERY_TAGGED_SELECTOR = '.note[data-note-tags*="@gallery"]';
+
+/**
+ * A note under a gallery is about to be edited: each gallery above it becomes an outline, as if
+ * its switch had been clicked, and stays one (the maintainer, 2026-11-21). A gallery note being
+ * edited shows the notes under it; clicking one of them took the gallery out of edit mode, its
+ * grid came back and hid the very note that was clicked. Shown at once, before anything else
+ * changes, then saved like any use of the switch.
+ */
+export async function showGalleriesAboveAsOutline(noteId) {
+    if (typeof noteId !== 'string' || noteId === '') {
+        throw new Error('showGalleriesAboveAsOutline requires a note id');
+    }
+    const note = listedNote(noteId);
+    if (note === null) {
+        return;
+    }
+    await showAsOutlineFrom(note.parentElement.closest(LISTED_NOTE_SELECTOR));
+}
+
+/**
+ * A note is about to be made under this one (a new child of the note being edited): the note,
+ * if it is a gallery, and each gallery above it become outlines, so the new note shows.
+ */
+export async function showGalleryAndThoseAboveAsOutline(noteId) {
+    if (typeof noteId !== 'string' || noteId === '') {
+        throw new Error('showGalleryAndThoseAboveAsOutline requires a note id');
+    }
+    await showAsOutlineFrom(listedNote(noteId));
+}
+
+function listedNote(noteId) {
+    return document.querySelector(`#notes-container ${LISTED_NOTE_SELECTOR}[data-note-id="${noteId}"]`);
+}
+
+// The gallery notes from this one up (null: none), each made an outline at once, then saved.
+async function showAsOutlineFrom(firstNote) {
+    const galleryIds = [];
+    let note = firstNote;
+    while (note !== null) {
+        if (note.matches(GALLERY_TAGGED_SELECTOR) && !isGalleryOutline(note.dataset.noteId)) {
+            setOutlineClass(note, true);
+            galleryIds.push(note.dataset.noteId);
+        }
+        note = note.parentElement.closest(LISTED_NOTE_SELECTOR);
+    }
+    for (const galleryId of galleryIds) {
+        await saveOutline(galleryId, true);
+    }
+}
+
 // The switch beside a gallery's fold arrow: the note's first line stays where it is; only what
 // is under its text changes.
 export async function toggleGalleryOutline(noteId) {

@@ -1,3 +1,4 @@
+import { showGalleryAndThoseAboveAsOutline } from '../services/gallery-view-service.js';
 import { ModeContextInstance as ModeContext } from '../mode-context.js';
 import * as Logger from '../mode-logger.js';
 import { NotesAPI } from '../../api-client.js';
@@ -641,6 +642,8 @@ export async function createChildNote() {
         parentNoteId: currentNoteId 
     }, Logger.LogCategory.DEBUG);
     
+    // Under a gallery note the new note would be hidden behind its grid (gallery-view-service.js).
+    await showGalleryAndThoseAboveAsOutline(currentNoteId);
     const data = await NotesAPI.createChild(currentNoteId, searchQueryForNewNotes());
     const newNoteId = data.id;
 
