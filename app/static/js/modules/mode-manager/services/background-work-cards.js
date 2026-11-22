@@ -1,6 +1,7 @@
 import { ApplicationState } from '../../application-state.js';
 import { NotesAPI } from '../../api-client.js';
 import { FloatingMessages } from '../../floating-messages.js';
+import { firstSeenTimes } from './background-work-seen.js';
 import { workProgressParts } from './background-work-text.js';
 
 // The server's work beside the user's (reading PDF text, an import), shown as it goes (the
@@ -28,25 +29,19 @@ function cardKey(key) {
     return `${CARD_KEY_PREFIX}${key}`;
 }
 
-// When a piece of work listed now was first seen: at an earlier listing, or now when this is
-// the first listing it is in.
-function firstSeenTime(key, now) {
-    if (Object.hasOwn(moduleState.firstSeenAt, key)) return moduleState.firstSeenAt[key];
-    return now;
-}
-
 /** Draw the cards for the work the server listed; the cards of work gone leave. */
 export function showBackgroundWork(work, now) {
     if (!Array.isArray(work)) {
         throw new Error('showBackgroundWork requires the listed work');
     }
-    const firstSeenAt = {};
     for (const entry of work) {
         if (typeof entry.key !== 'string' || typeof entry.label !== 'string' || !Number.isInteger(entry.done)
             || !Number.isInteger(entry.total) || !Number.isInteger(entry.elapsedSeconds)) {
             throw new Error('Background work listed malformed');
         }
-        firstSeenAt[entry.key] = firstSeenTime(entry.key, now);
+    }
+    const firstSeenAt = firstSeenTimes(moduleState.firstSeenAt, work, now);
+    for (const entry of work) {
         const isOldEnough = now - firstSeenAt[entry.key] >= SHOW_AFTER_MS;
         if (isOldEnough && !moduleState.shownElsewhere.includes(entry.key)) {
             FloatingMessages.showWorkProgress(cardKey(entry.key), workProgressParts(entry), entry.done, entry.total);
@@ -57,9 +52,8 @@ export function showBackgroundWork(work, now) {
     for (const key of Object.keys(moduleState.firstSeenAt)) {
         if (!Object.hasOwn(firstSeenAt, key)) FloatingMessages.end(cardKey(key));
     }
-    if (JSON.stringify(firstSeenAt) !== JSON.stringify(moduleState.firstSeenAt)) {
-        moduleState.firstSeenAt = Object.freeze(firstSeenAt);
-    }
+    // The same times, whatever order the work was listed in, are no change (background-work-seen.js).
+    if (firstSeenAt !== moduleState.firstSeenAt) moduleState.firstSeenAt = firstSeenAt;
     return work.length > 0;
 }
 

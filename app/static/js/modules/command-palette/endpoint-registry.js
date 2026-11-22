@@ -405,6 +405,19 @@ export function buildCommandPaletteEndpoints(deps) {
             closeOnExecute: true,
             execute: async () => setFileFilter(kind),
         })),
+        // Notes with Links: kinds of the same filter (file-filter-kinds.js); All Notes ends them too.
+        ...[
+            ['links', 'Containing Links'],
+            ['linked', 'Linked from Other Notes'],
+            ['broken-links', 'With Broken Links'],
+        ].map(([kind, label]) => ({
+            id: `view.links.${kind}`,
+            kind: 'action',
+            label: `Notes with Links: ${label}`,
+            getValue: () => (getFileFilterKind() === kind ? 'Current' : '↵'),
+            closeOnExecute: true,
+            execute: async () => setFileFilter(kind),
+        })),
         {
             id: 'pref.theme',
             kind: 'select',

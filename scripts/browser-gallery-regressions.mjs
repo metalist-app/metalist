@@ -127,6 +127,65 @@ async function tileOpensItsFile(page, noteId) {
   await idle(page);
 }
 
+// A note under a gallery, clicked while the gallery note is being edited (which shows the notes
+// under it), opens for editing and stays in sight: the gallery stays an outline, as if its
+// switch had been clicked (the maintainer, 2026-11-21: "it goes back to initial gallery view").
+// Leaves the gallery as its grid again.
+async function noteUnderAnEditedGalleryOpens(page, ids) {
+  const [galleryId, childId] = ids;
+  const state = () => page.evaluate(async (galleryId, childId) => {
+    const {ModeContextInstance: mode} = await import('/static/js/modules/mode-manager/mode-context.js');
+    const child = document.querySelector(`.note[data-note-id="${childId}"]`);
+    return {
+      isEditing: mode.isEditing, edited: mode.currentNoteId,
+      isChildShown: child !== null && child.getClientRects().length > 0,
+      isOutline: document.querySelector(`.note[data-note-id="${galleryId}"]`).classList.contains('is-gallery-outline'),
+    };
+  }, galleryId, childId);
+  await page.click(`.note[data-note-id="${galleryId}"] > .note-content h1`);
+  await page.waitForFunction(galleryId => document.querySelector(`.note[data-note-id="${galleryId}"]`).classList.contains('editing'), {}, galleryId);
+  await idle(page);
+  assert.equal((await state()).isChildShown, true, 'a gallery note being edited shows the notes under it');
+  await page.click(`.note[data-note-id="${childId}"] > .note-content`);
+  await idle(page);
+  assert.deepEqual(await state(), {isEditing: true, edited: childId, isChildShown: true, isOutline: true},
+    'the note under it opens for editing, in sight, the gallery an outline');
+  await page.keyboard.press('Escape');
+  await idle(page);
+  assert.deepEqual(await state(), {isEditing: false, edited: null, isChildShown: true, isOutline: true},
+    'and stays in sight once it is left');
+  await page.click(`.note[data-note-id="${galleryId}"] .meta-gallery-switch`);
+  await page.waitForFunction(galleryId => !document.querySelector(`.note[data-note-id="${galleryId}"]`).classList.contains('is-gallery-outline'), {}, galleryId);
+  await idle(page);
+  // The same for a note made under the gallery note while it is edited.
+  await page.click(`.note[data-note-id="${galleryId}"] > .note-content h1`);
+  await page.waitForFunction(galleryId => document.querySelector(`.note[data-note-id="${galleryId}"]`).classList.contains('editing'), {}, galleryId);
+  await idle(page);
+  await page.keyboard.down('Control');
+  await page.keyboard.down('Shift');
+  await page.keyboard.press('Enter');
+  await page.keyboard.up('Shift');
+  await page.keyboard.up('Control');
+  await idle(page);
+  const made = await page.evaluate(async (galleryId) => {
+    const {ModeContextInstance: mode} = await import('/static/js/modules/mode-manager/mode-context.js');
+    const note = document.querySelector(`.note[data-note-id="${mode.currentNoteId}"]`);
+    return {
+      isEditing: mode.isEditing, isNew: mode.currentNoteId !== galleryId,
+      isUnderGallery: note !== null && note.parentElement.closest('.note[data-note-id]').dataset.noteId === galleryId,
+      isShown: note !== null && note.getClientRects().length > 0,
+      isOutline: document.querySelector(`.note[data-note-id="${galleryId}"]`).classList.contains('is-gallery-outline'),
+    };
+  }, galleryId);
+  assert.deepEqual(made, {isEditing: true, isNew: true, isUnderGallery: true, isShown: true, isOutline: true},
+    'a note made under the edited gallery note opens for editing, in sight');
+  await page.keyboard.press('Escape');
+  await idle(page);
+  await page.click(`.note[data-note-id="${galleryId}"] .meta-gallery-switch`);
+  await page.waitForFunction(galleryId => !document.querySelector(`.note[data-note-id="${galleryId}"]`).classList.contains('is-gallery-outline'), {}, galleryId);
+  await idle(page);
+}
+
 async function galleryCases(page, noteId) {
   const grid = await layout(page, noteId);
   assert.equal(grid.isOutline, false, 'a gallery starts as its grid');
@@ -403,6 +462,7 @@ export async function checkGallery(page) {
     await idle(page);
     await galleryCases(page, ids[0]);
     await tileOpensItsFile(page, ids[0]);
+    await noteUnderAnEditedGalleryOpens(page, ids);
     await page.$eval(`.note[data-note-id="${textless[0]}"]`, note => note.scrollIntoView({block: 'center'}));
     await idle(page);
     await arrowIgnoresTileText(page, textless[0]);

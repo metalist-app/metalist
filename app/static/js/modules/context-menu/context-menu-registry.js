@@ -12,7 +12,9 @@ import {
     DATE_RANGE_PRESETS,
 } from '../mode-manager/services/date-range-kinds.js';
 import { THEME_CHOICES } from '../theme-choices.js';
-import { FILE_FILTER_KINDS, fileFilterMenuLabel, isFileFilterKind } from '../mode-manager/services/file-filter-kinds.js';
+import {
+    FILE_FILTER_KINDS, LINK_FILTER_CHOICES, fileFilterMenuLabel, isFileFilterKind, isLinkFilterKind,
+} from '../mode-manager/services/file-filter-kinds.js';
 
 // Menu rules (docs/ui/modals.md, "Dialog and menu conventions", rule 8): a trailing "…"
 // means a dialog asks for more before anything happens; destructive items come last;
@@ -765,7 +767,8 @@ function buildSortModeItem(sortMode, fileFilterKind, onSetSortMode) {
         [ROOT_SORT_MODES.ALPHABETICAL, 'Alphabetical', 'alphabetical'],
         [ROOT_SORT_MODES.CONTENT_VOLUME, 'Content Volume', 'volume'],
     ];
-    if (fileFilterKind !== FILE_FILTER_KINDS.NONE) {
+    // File Size orders a view kept to files; a Notes with Links view is about none.
+    if (fileFilterKind !== FILE_FILTER_KINDS.NONE && !isLinkFilterKind(fileFilterKind)) {
         options.push([ROOT_SORT_MODES.FILE_SIZE, 'File Size', 'attachment']);
     }
     return {
@@ -860,6 +863,27 @@ function buildFileFilterItem(context, handlers) {
     };
 }
 
+// Notes with Links: the same filter kept to the notes other notes link to, the notes that link
+// to a note, or the notes with a broken link (file-filter-kinds.js); All Notes ends it.
+function buildLinkFilterItem(context, handlers) {
+    const kind = context.fileFilterKind;
+    if (!isFileFilterKind(kind)) {
+        throw new Error('View context missing fileFilterKind');
+    }
+    const onSetFileFilter = requireViewHandler(handlers, 'onSetFileFilter');
+    const choices = [[FILE_FILTER_KINDS.NONE, 'All Notes'], ...LINK_FILTER_CHOICES];
+    return {
+        id: 'link-filter',
+        label: 'Notes with Links',
+        icon: 'link',
+        enabled: true,
+        submenu: choices.map(([value, label], index) => choiceItem({
+            id: `link-filter-${value}`, label, icon: null, isCurrent: value === kind, separated: index === 1,
+            onChoose: () => onSetFileFilter(value),
+        })),
+    };
+}
+
 const MAC_KEY_SYMBOLS = Object.freeze({ Enter: '↩', Backspace: '⌫' });
 
 // A keyboard shortcut as the platform writes it: ⇧⌘Z on a Mac, Ctrl+Shift+Z elsewhere
@@ -925,6 +949,7 @@ function buildSearchBarContextItems(context, handlers) {
         buildSortModeItem(context.sortMode, context.fileFilterKind, requireViewHandler(handlers, 'onSetSortMode')),
         buildDateRangeItem(context, handlers),
         buildFileFilterItem(context, handlers),
+        buildLinkFilterItem(context, handlers),
     ];
 }
 
@@ -1026,6 +1051,7 @@ function buildViewContextItems(context, handlers) {
         buildSortModeItem(context.sortMode, context.fileFilterKind, handlers.onSetSortMode),
         buildDateRangeItem(context, handlers),
         buildFileFilterItem(context, handlers),
+        buildLinkFilterItem(context, handlers),
         // Themes alone (the maintainer, 2026-11-02: Show's other switches have buttons always on
         // screen, the chat's and the virtual folders' tabs; Tags in List stays in the palette).
         {

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from app.services.search_index import FOLDER_TAG_END, extract_tags_for_search, search_index
-from app.services.search_query import SearchClause, comment_term_words, is_comment_term, parse_search_query
+from app.services.search_query import SearchClause, comment_term_words, is_comment_term, parse_search_query, tags_named
 from app.services.tag_properties import ANY_TAG, IMPLICIT_PROPERTY, PROPERTY_SEPARATOR, PropertyCondition
 from app.services.search_text import build_searchable_text_casefold, tag_bar_comments
 from app.services.text_terms import comment_term_matches, text_term_matches
@@ -98,7 +98,8 @@ def _tags_matching_clause(clause: SearchClause, *, parent_id: str | None, conten
     required_tag_terms = dedupe_tag_terms_by_casefold(
         [
             prefer_existing_tag_case(term, preferred_by_casefold)
-            for term in sorted(clause.required_tags)
+            # A wildcard (*burger*) names no tag a note could be given.
+            for term in sorted(tags_named(clause.required_tags))
         ]
     )
     # Folder terms add results (docs/ready-to-build/folders-tab-and-multiple-folders.md §4): a

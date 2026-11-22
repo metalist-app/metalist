@@ -12,7 +12,6 @@ const TAG_CONTAINS_DISALLOWED = new Set([
     '}',
     '(',
     ')',
-    '*',
     '|',
     ';',
     '~',
@@ -20,6 +19,10 @@ const TAG_CONTAINS_DISALLOWED = new Set([
 ]);
 
 const TOKEN_START_DISALLOWED = new Set(['-', '+', '/']);
+// In a search's tag term a star stands for any letters (*burger* finds cheeseburger;
+// app/services/search_query.py, WILDCARD). No tag holds one: the tag bar drops it.
+const WILDCARD = '*';
+const WILDCARD_RUN_RE = /\*{2,}/g;
 // A tag's name and value: @code=python (app/services/search_index.py TAG_VALUE_SEPARATOR).
 const TAG_VALUE_SEPARATOR = '=';
 // Same wording as the server's rejection (app/services/search_query.py).
@@ -94,7 +97,8 @@ function enforceTagToken(rawToken) {
         output += char;
     }
 
-    return output;
+    // Stars side by side are one.
+    return output.replace(WILDCARD_RUN_RE, WILDCARD);
 }
 
 // Property terms (docs/design/tag-properties.md): jogging:miles>2, jogging:miles?,
@@ -652,6 +656,16 @@ export function analyzeSearchQueryInput(typedInput) {
             }
             continue;
         }
+        // A star alone is a wildcard being typed (*burger* starts with it): it stays in the box,
+        // and is no term to search by yet, since alone it would find every tag (the maintainer,
+        // 2026-11-21: "I literally cannot type * into search").
+        if (enforcedToken === WILDCARD) {
+            normalizedTerms.push(`${prefix}${WILDCARD}`);
+            closedTerms.push(`${prefix}${WILDCARD}`);
+            isComplete = false;
+            endsWithOrOperator = false;
+            continue;
+        }
         if (enforcedToken === OR_OPERATOR) {
             normalizedTerms.push(OR_OPERATOR);
             closedTerms.push(OR_OPERATOR);
@@ -737,6 +751,10 @@ export function findUnfillableSearchTerm(searchQuery) {
         index = nextIndex;
         if (text === OR_OPERATOR) {
             return null;
+        }
+        // A wildcard names no tag a new note could be given (the maintainer, 2026-11-21).
+        if (prefix !== '-' && !text.startsWith(COMMENT_OPEN) && text.includes(WILDCARD)) {
+            return text;
         }
         if (prefix === '-' || !isPropertyTerm(text)) {
             continue;

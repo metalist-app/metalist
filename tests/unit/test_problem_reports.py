@@ -93,7 +93,8 @@ def _empty_history():
 
 # Every form a search can take (search-syntax-service.js, search_query.py): a tag, #, + and -
 # before a tag, a word that is no tag, a quoted phrase, OR, parentheses, a MetaList tag, a
-# tag with a value, a folder tag, a number tag, a property comparison and a quoted value.
+# tag with a value, a folder tag, a number tag, a property comparison, a quoted value and a
+# wildcard.
 SEARCHES = (
     "quokka",
     "Quokka",
@@ -105,6 +106,8 @@ SEARCHES = (
     "@code=python",
     "2026 quokka",
     "price>1450 author=\"Okapi Tapir\" quokka?",
+    # A star stands for any letters of a tag (docs/ui/search-semantics.md, Wildcards).
+    "*quokka* marmo* -*tapir",
 )
 
 

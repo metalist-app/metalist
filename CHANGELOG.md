@@ -2,6 +2,12 @@
 
 What changed in each MetaList release, newest first.
 
+## Changes in 0.34.0
+
+- **Wildcards in search.** A `*` in a tag term stands for any letters: `*burger*` finds notes with a tag containing "burger" (`cheeseburger`, `burger-night`), `burger*` tags that start with it, `*burger` tags that end with it. Capitals are ignored and `-*burger*` leaves those notes out. It matches tags only, a tag's value included, never words in a note's text. A search with a wildcard takes no new note at its top, since there is no single tag to give it.
+- **Notes with Links.** A new entry under Notes with Files, in the right-click menus and the command palette, keeps a search context to notes by their links: **Containing Links** (the note links to or embeds another note), **Linked from Other Notes** (another note links to or embeds it) or **With Broken Links** (a link or embed in it leads nowhere). It combines with a search, a date range and a sort order, and shows a chip in the search box; a search context has a link filter or a file filter, not both.
+- **Clicking a note under a gallery opens it.** While a gallery note is edited, the notes under it show; clicking one, or adding a note there, used to bring the grid back and hide the note you had just clicked. The gallery now stays an outline, and its switch brings the grid back.
+
 ## Changes in 0.33.0
 
 - **A link can lead to words inside a note.** Type `[[`, a note's name and `#` (`[[Trip plan#`): the list shows that note's lines, headings first, and letters after the `#` narrow them. Choosing a line writes a link to those words. Clicking the link opens the note with the words brought into view and marked; the mark goes at your next click, scroll or key. Any text in the note or in a note under it can be pointed at, not only a heading. If the words are later reworded, the link still opens the note.

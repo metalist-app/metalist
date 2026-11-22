@@ -5,6 +5,12 @@ What changed in each MetaList version, newest first, from its changelog
 Compare with installed_version from the help lookup to tell the user whether
 they already have a release. Version info offers updates (see the data topic).
 
+## 0.34.0
+
+- **Wildcards in search.** A `*` in a tag term stands for any letters: `*burger*` finds notes with a tag containing "burger" (`cheeseburger`, `burger-night`), `burger*` tags that start with it, `*burger` tags that end with it. Capitals are ignored and `-*burger*` leaves those notes out. It matches tags only, a tag's value included, never words in a note's text. A search with a wildcard takes no new note at its top, since there is no single tag to give it.
+- **Notes with Links.** A new entry under Notes with Files, in the right-click menus and the command palette, keeps a search context to notes by their links: **Containing Links** (the note links to or embeds another note), **Linked from Other Notes** (another note links to or embeds it) or **With Broken Links** (a link or embed in it leads nowhere). It combines with a search, a date range and a sort order, and shows a chip in the search box; a search context has a link filter or a file filter, not both.
+- **Clicking a note under a gallery opens it.** While a gallery note is edited, the notes under it show; clicking one, or adding a note there, used to bring the grid back and hide the note you had just clicked. The gallery now stays an outline, and its switch brings the grid back.
+
 ## 0.33.0
 
 - **A link can lead to words inside a note.** Type `[[`, a note's name and `#` (`[[Trip plan#`): the list shows that note's lines, headings first, and letters after the `#` narrow them. Choosing a line writes a link to those words. Clicking the link opens the note with the words brought into view and marked; the mark goes at your next click, scroll or key. Any text in the note or in a note under it can be pointed at, not only a heading. If the words are later reworded, the link still opens the note.
@@ -192,19 +198,5 @@ they already have a release. Version info offers updates (see the data topic).
 - With nothing typed, the tag bar and Suggest Tags with AI no longer offer another spelling of a tag the note has: no `eggs` beside `egg`, no `easter-eggs` beside `easter-egg`. Typing still offers every spelling that matches.
 - Synonyms of the tags in the bar are never suggested (no `avocados` once `avocado` is there), and a tag a parent already has is not suggested until you type it, whatever else goes with it.
 - The Tag Suggestions setting "Allow suggesting tags that already apply" is removed; a saved choice is dropped.
-
-## 0.21.0
-
-- **Memory usage** (command palette): the server's memory now and at its peak (on a Mac as Activity Monitor counts it), the notes it holds decrypted, how long the last unlock took and where, and *Measure what holds it*, a breakdown of each part; Copy puts it all on the clipboard.
-- Much lighter and faster for large namespaces (measured on about 107,500 notes): memory down from about 1.5 GB to about 640 MB, starting the servers from 4.6 to about 2 s (the launch ends with "Ready in"), unlocking from about 9 to about 6 s. Suggestions after typing a tag and a space now come in a few hundredths of a second instead of most of a second, and searches of tags alone are faster.
-- Search highlights the quoted phrases it found. `@code` finds every `@code=<language>` note, suggestions offer the family and its members, and `@code=python` can be typed directly.
-- **Backup reminder** (command palette): Off, Daily, Weekly (the default), Every 2 weeks or Monthly. When this namespace's newest backup is older than that, a card floats at the bottom right.
-- References have one syntax, and embedded notes are drawn like the main tree. ⌘V pastes what is on the clipboard rather than the last copied note, a pasted note keeps each copied note's collapsed or expanded state, and a click on a short Markdown list item edits that item.
-- Pasted web addresses lose their tracking parameters.
-- AI privacy: the text actually sent is checked against the privacy settings, private search terms are never sent, proposed tags never count toward a whitelist, and changing the privacy settings stops a request already under way.
-- Exported HTML is cleaned like the note view and carries its own security policy; code lines stay whole in full screen and in exports.
-- Fixed: right-clicking selected images (just pasted, for example) failed instead of opening the image menu; a refused chat Send now stays on screen with its reason; Enter and the arrow keys act only on a suggestion list made for what was typed; the banner and zoom work while editing; clicking a diagram edits it and pictures can be dragged; a move that changes nothing does nothing; a save made while a password is being set (or a backup restored) waits for it to finish instead of failing, and the "Processing" page returns to MetaList on its own; reminder fixes.
-- **MetaList now needs Python 3.11 or newer.** Python 3.10 reaches its end of life this month, and Pillow's fixes below no longer support it. An install on Python 3.10 needs a newer Python before it can update.
-- Security: Pillow 13.0.0 (eight advisories in decoding crafted TIFF, GIF, PPM, EPS and PDF files, which MetaList meets in remote images and attachments), pypdf 6.21.1 (crafted PDFs that loop, use too much memory, or reach arbitrary image parsers), aiohttp 3.14.4 (GHSA-2g87-pp6c-29x5), certifi 2026.10.19 and uv 0.13.4. The source repository moved to metalist-app/metalist.
 
 Older versions are in the releases-2 help topic.

@@ -25,7 +25,15 @@ FILE_FILTER_ANY = "any"
 FILE_FILTER_NONE = "none"
 # In the order the menus list them with equally many files.
 STANDARD_FILE_KINDS = (FILE_KIND_IMAGE, FILE_KIND_PDF, FILE_KIND_MARKDOWN)
-_NAMED_FILTER_KINDS = frozenset({FILE_FILTER_ANY, FILE_KIND_NO_EXTENSION, *STANDARD_FILE_KINDS})
+# Notes with Links (link_filters.py; the maintainer, 2026-11-21): kinds of the same filter, so a
+# tab has one of them or a kind of file, with the same chip, menus and saved state. In the
+# menus' order: the notes that link to a note, the notes other notes link to, and the notes with
+# a link leading nowhere.
+LINK_FILTER_LINKED = "linked"
+LINK_FILTER_LINKS = "links"
+LINK_FILTER_BROKEN = "broken-links"
+LINK_FILTER_KINDS = (LINK_FILTER_LINKS, LINK_FILTER_LINKED, LINK_FILTER_BROKEN)
+_NAMED_FILTER_KINDS = frozenset({FILE_FILTER_ANY, FILE_KIND_NO_EXTENSION, *STANDARD_FILE_KINDS, *LINK_FILTER_KINDS})
 # Longer, or with other characters, it is the end of a sentence in a name ("v1.final draft").
 _EXTENSION_KIND = re.compile(r"\.[a-z0-9_+-]{1,12}")
 
@@ -54,6 +62,11 @@ def is_file_filter_kind(kind: str) -> bool:
     if kind in _NAMED_FILTER_KINDS:
         return True
     return _EXTENSION_KIND.fullmatch(kind) is not None
+
+
+def is_link_filter_kind(kind: str) -> bool:
+    """Whether the filter is about links, not about a kind of file."""
+    return kind in LINK_FILTER_KINDS
 
 
 def make_file_filter(kind: str) -> str:

@@ -6,6 +6,7 @@ import { actionSaveNote } from './content-actions.js';
 import { NotesAPI } from '../../api-client.js';
 import { actionRefreshAndMaybeSelect } from './ui-actions.js';
 import { clearTagBar } from '../services/tag-bar-service.js';
+import { showGalleriesAboveAsOutline } from '../services/gallery-view-service.js';
 import { persistExpandedEditSessionIfNeeded, restoreCollapsedStateLocallyIfNeeded } from '../services/edit-session-collapse-service.js';
 import { clearSelectionStateForDeselect } from '../services/deselect-selection-state-service.js';
 import { captureNoteAnchor, captureSortedExitAnchor, captureWindowTopNote, holdViewportRoot } from '../services/viewport-hold-service.js';
@@ -78,6 +79,9 @@ export async function actionSelectNote(noteId, options) {
         throw new Error('actionSelectNote options.recordEditInteraction must be boolean when provided');
     }
     const shouldRecordEditInteraction = options.recordEditInteraction !== false;
+    // Before the note edited now is left: a gallery above the new one stays an outline, so the
+    // note about to be edited is not hidden behind its grid (gallery-view-service.js).
+    await showGalleriesAboveAsOutline(noteId);
     const startedAt = performance.now();
     Logger.logAction('selectNote', { 
         noteId, 
@@ -256,6 +260,7 @@ export async function actionSwitchNotes(newNoteId, options) {
 		throw new Error('actionSwitchNotes requires options.initialCaretVisibility');
 	}
 	const initialCaretVisibility = options.initialCaretVisibility;
+    await showGalleriesAboveAsOutline(newNoteId);
 	let startedAt = performance.now();
     Logger.logAction('switchNotes', { 
         currentNoteId: ModeContext.currentNoteId,

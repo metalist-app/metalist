@@ -329,6 +329,24 @@
     "presentation": "palette"
   },
   {
+    "id": "view.links.links",
+    "label": "Notes with Links: Containing Links",
+    "selector": "#command-palette-modal",
+    "presentation": "palette"
+  },
+  {
+    "id": "view.links.linked",
+    "label": "Notes with Links: Linked from Other Notes",
+    "selector": "#command-palette-modal",
+    "presentation": "palette"
+  },
+  {
+    "id": "view.links.broken-links",
+    "label": "Notes with Links: With Broken Links",
+    "selector": "#command-palette-modal",
+    "presentation": "palette"
+  },
+  {
     "id": "pref.theme",
     "label": "Theme",
     "selector": "#command-palette-modal",

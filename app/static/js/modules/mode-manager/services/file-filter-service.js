@@ -16,6 +16,9 @@ const CHIP_LABELS = Object.freeze({
     [FILE_FILTER_KINDS.PDF]: 'With PDFs',
     [FILE_FILTER_KINDS.MARKDOWN]: 'With Markdown files',
     [FILE_KIND_NO_EXTENSION]: 'With no extension',
+    [FILE_FILTER_KINDS.LINKED]: 'Linked from other notes',
+    [FILE_FILTER_KINDS.LINKS]: 'With links',
+    [FILE_FILTER_KINDS.BROKEN_LINKS]: 'With broken links',
 });
 const CHIP_TOOLTIPS = Object.freeze({
     [FILE_FILTER_KINDS.ANY]: 'Notes with an attached file',
@@ -23,6 +26,9 @@ const CHIP_TOOLTIPS = Object.freeze({
     [FILE_FILTER_KINDS.PDF]: 'Notes with a PDF',
     [FILE_FILTER_KINDS.MARKDOWN]: 'Notes with a Markdown file',
     [FILE_KIND_NO_EXTENSION]: 'Notes with a file that has no extension',
+    [FILE_FILTER_KINDS.LINKED]: 'Notes another note links to or embeds',
+    [FILE_FILTER_KINDS.LINKS]: 'Notes that link to or embed another note',
+    [FILE_FILTER_KINDS.BROKEN_LINKS]: 'Notes with a link or embed that leads nowhere',
 });
 
 const moduleState = ApplicationState.createFields('file-filter-service', {

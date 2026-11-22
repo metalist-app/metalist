@@ -6,7 +6,7 @@ from threading import RLock
 from datetime import datetime
 from typing import Dict, List, Optional
 
-from app.services.file_kinds import FILE_FILTER_ANY
+from app.services.file_kinds import FILE_FILTER_ANY, is_link_filter_kind
 from app.services.file_registry import file_registry
 from app.services.note_store import store as note_store
 from app.utils.text_utils import strip_html
@@ -286,7 +286,8 @@ def _sizes_and_root_files(file_filter: str | None) -> tuple[Dict[str, int], Dict
     any holds in its subtree, so a file counts once however often the root uses it.
     Without a filter (the AI checking a search alone) every file counts."""
     kind = FILE_FILTER_ANY
-    if file_filter is not None:
+    # A Notes with Links filter is about no kind of file: every file counts, as with no filter.
+    if file_filter is not None and not is_link_filter_kind(file_filter):
         kind = file_filter
     sizes = file_registry.sizes_of_kind(kind)
     files_by_root: Dict[str, set[str]] = {}

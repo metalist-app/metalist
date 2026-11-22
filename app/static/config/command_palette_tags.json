@@ -113,6 +113,18 @@
       "tags": ["files", "attachments", "filter", "markdown", "md", "view"]
     },
     {
+      "id": "view.links.links",
+      "tags": ["links", "linking", "references", "embeds", "filter", "view"]
+    },
+    {
+      "id": "view.links.linked",
+      "tags": ["links", "linked", "backlinks", "references", "referenced", "filter", "view"]
+    },
+    {
+      "id": "view.links.broken-links",
+      "tags": ["links", "broken", "dead", "missing", "dangling", "references", "filter", "view"]
+    },
+    {
       "id": "pref.theme",
       "tags": ["theme", "appearance", "light", "dark", "system", "ui"]
     },

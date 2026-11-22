@@ -18,6 +18,7 @@ from app.services.content_formatting import (
 )
 from app.services.shared_sets import SharedSetColumn, SharedSets
 from app.services.search_query import SearchClause, comment_term_words, is_comment_term, parse_search_query
+from app.services.search_query import is_wildcard_term, wildcard_matches
 from app.services.tag_term_matching import tag_term_matches_prefix
 from app.services.tag_characters import normalize_text
 from app.services.tag_properties import (
@@ -2335,7 +2336,15 @@ class SearchIndex:
     def _search_term_posting_locked(self, tag_casefold: str) -> Set[int]:
         """The notes a search's tag term finds: its tag's family, exactly. A folder term finds the
         folders below it too, as a folder tag implies the folders above it
-        (tag_ontology.parent_folder_tags; docs/ready-to-build/folders-tab-and-multiple-folders.md §6)."""
+        (tag_ontology.parent_folder_tags; docs/ready-to-build/folders-tab-and-multiple-folders.md §6).
+        A wildcard term (*burger*) finds the notes of every tag it stands for, values included
+        (docs/ui/search-semantics.md, Wildcards)."""
+        if is_wildcard_term(tag_casefold):
+            found: Set[int] = set()
+            for tag, notes in self._tag_notes_casefold.items():
+                if notes and wildcard_matches(tag_casefold, tag):
+                    found |= notes
+            return found
         return self._tag_family_posting_locked(tag_casefold)
 
     def _tag_family_posting_locked(self, tag_casefold: str) -> Set[int]:

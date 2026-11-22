@@ -126,6 +126,7 @@ Most of what MetaList does on screen after an action follows from these.
   another note, not a statement that the host is about the same things.
 - **No new note is made at the top of a search a new note could not match** (such as
   `miles>3`); a message says so. Why: the note would vanish from the search it was made in.
+- **A search with a wildcard (`*burger*`) takes no new note.** Why: a new note gets the tags of the search it is made in, and a wildcard names no single tag, so the note would vanish from its own search. Tag rules take no wildcards either: that was judged too complex for what it gives.
 - **The search bar suggests tags only, never words from notes.** Why: suggesting words would be
   text search, and tags are easier to remember than words.
 - **⌘F / Ctrl+F is MetaList's own find, not the browser's.** Why: the browser holds only the
