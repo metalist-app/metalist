@@ -813,6 +813,35 @@ def store_file_previews(
     return record
 
 
+def is_editable_file_kind(thumbnail_kind: str) -> bool:
+    """Whether MetaList edits files of this kind in place (diagrams): the only attachments a
+    copy of which can come to differ from its original."""
+    return thumbnail_kind in _EDITABLE_THUMBNAIL_KINDS
+
+
+def duplicate_editable_file(*, file_id: str, name: str, token: str) -> FileReferenceRecord:
+    """A new file with the editable file's content as it is now and its previews, named `name`:
+    a diagram of its own, which changes apart from the original (docs/ui/excalidraw.md,
+    "Copies")."""
+    if not isinstance(name, str) or name == "":
+        raise TypeError("name must be a non-empty string")
+    source = download_file(file_id, token)
+    _require_editable(source.record)
+    copy = create_file(
+        original_filename=name, mime_type=source.record.mime_type, content_bytes=source.content_bytes, token=token,
+    )
+    previews = {
+        variant: find_file_preview(file_id=file_id, variant=variant, token=token) for variant in FILE_PREVIEW_VARIANTS
+    }
+    # A diagram never rendered has none; its copy is rendered when first closed, as it would be.
+    drawn = {variant: preview.content_bytes for variant, preview in previews.items() if preview is not None}
+    if len(drawn) == len(FILE_PREVIEW_VARIANTS):
+        store_file_previews(
+            file_id=copy.id, previews_by_variant=drawn, content_revision=copy.content_revision, token=token,
+        )
+    return copy
+
+
 def get_file_preview(*, file_id: str, variant: str, token: str) -> FilePreview:
     preview = find_file_preview(file_id=file_id, variant=variant, token=token)
     if preview is None:

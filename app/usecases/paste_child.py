@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Dict, List
 
+from app.services.diagram_copies import snapshot_with_own_diagrams
 from app.usecases.base import QueryCommand
 from app.services.store import store, NodeRecord
 from app.services.sync import get_clipboard, generate_new_uuid
@@ -24,6 +25,8 @@ class CmdPasteChild(QueryCommand):
         snapshot = get_clipboard(self.client_id)
         if not snapshot:
             return {"status": "clipboard_empty"}
+        # A copy's diagrams are its own (diagram_copies.py).
+        snapshot = snapshot_with_own_diagrams(snapshot, token=self.token)
         return paste_snapshot_as_child(
             snapshot=snapshot,
             target_note_id=self.target_note_id,
