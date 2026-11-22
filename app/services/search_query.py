@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from typing import FrozenSet, List, Optional, Set, Tuple
+from functools import lru_cache
+from typing import FrozenSet, Iterable, List, Optional, Set, Tuple
 from app.services.input_errors import InputRejected
 from app.services.quoted_values import token_end
 from app.services.tag_characters import normalize_text
@@ -244,6 +245,8 @@ def parse_search_query(normalized_text: str) -> ParsedSearchQuery:
             clause_term_count += 1
             continue
 
+        if is_wildcard_term(token) and token.strip(WILDCARD) == "":
+            raise InputRejected("Put letters with the * (for example *burger*): a * alone would find every tag")
         if prefix == "-":
             forbidden_tags.add(token)
         else:
@@ -265,13 +268,42 @@ def parse_search_query(normalized_text: str) -> ParsedSearchQuery:
     return ParsedSearchQuery(clauses=tuple(clauses))
 
 
+# In a tag term, any letters, none included (docs/ui/search-semantics.md, Wildcards): *burger*
+# finds cheeseburger. No tag holds one, so a term with a star is never a tag itself: it stays
+# among a clause's tag terms, and whatever gives a note a search's tags leaves it out.
+WILDCARD = "*"
+# A search holds a few wildcard terms, asked again at every keystroke and refresh.
+_WILDCARD_PATTERNS_KEPT = 256
+
+
+def is_wildcard_term(term: str) -> bool:
+    return WILDCARD in term
+
+
+@lru_cache(maxsize=_WILDCARD_PATTERNS_KEPT)
+def _wildcard_pattern(term_casefold: str) -> re.Pattern[str]:
+    return re.compile(".*".join(re.escape(part) for part in term_casefold.split(WILDCARD)))
+
+
+def wildcard_matches(term: str, tag: str) -> bool:
+    """Whether a tag (its value included, meal=hamburger) is one the wildcard term stands for,
+    capitals ignored."""
+    assert is_wildcard_term(term), "only a term with a star is matched this way"
+    return _wildcard_pattern(term.casefold()).fullmatch(tag.casefold()) is not None
+
+
+def tags_named(terms: Iterable[str]) -> List[str]:
+    """The terms that name a tag: every one but the wildcards."""
+    return [term for term in terms if not is_wildcard_term(term)]
+
+
 def tags_excluded_by_search(search: str) -> FrozenSet[str]:
     """The tags (casefolded) a search leaves out whichever of its OR parts a note matches
     (`ML3 -journal` gives `journal`): a note given one of them leaves the search's list."""
     parsed = parse_search_query(search)
-    excluded = {tag.casefold() for tag in parsed.first_clause.forbidden_tags}
+    excluded = {tag.casefold() for tag in tags_named(parsed.first_clause.forbidden_tags)}
     for clause in parsed.clauses:
-        excluded &= {tag.casefold() for tag in clause.forbidden_tags}
+        excluded &= {tag.casefold() for tag in tags_named(clause.forbidden_tags)}
     return frozenset(excluded)
 
 

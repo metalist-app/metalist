@@ -16,7 +16,7 @@ from app.services.ontology_rules_store import get_ontology
 from app.services.search_history import count_recent_tag_activity
 from app.services.search_index import extract_ordered_tags_for_search
 from app.services.search_index import search_index
-from app.services.search_query import parse_search_query
+from app.services.search_query import parse_search_query, tags_named
 from app.services.tag_ontology import TagOntology
 from app.services.tag_suggestion_reasons import AppliesThrough
 from app.services.tag_suggestion_reasons import cooccurrence_phrase
@@ -188,7 +188,7 @@ def _other_required_tags(*, rest: str, tag: str) -> Tuple[str, ...]:
     if len(parsed.clauses) != 1:
         return ()
     return tuple(
-        required for required in parsed.clauses[0].required_tags
+        required for required in tags_named(parsed.clauses[0].required_tags)
         if not required.startswith("@") and required.casefold() != tag.casefold()
     )
 

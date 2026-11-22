@@ -98,6 +98,19 @@ Built 2026-11-11 (the maintainer: "so I can find everything that got /*help*/ ad
 - A note made, pasted or outdented under the search gets the comment itself (`/*help*/`) unless one of its comments already contains it, as a quoted phrase gives `/*phrase*/`.
 - Implementation: `parse_search_query` (`app/services/search_query.py`, comment terms kept with the quoted phrases as `/*words*/`), `SearchIndex._text_term_matches_locked` and `comment_term_matches` (`app/services/text_terms.py`), the search box's `readCommentTerm` (`search-syntax-service.js`). Tests: `tests/unit/test_comment_search_terms.py`, `tests/unit/search_comment_terms.test.mjs`.
 
+### Wildcards (`*` in a tag term)
+
+Built 2026-11-21 (the maintainer's note: "match tags using *, e.g. *burger*").
+
+- In an unquoted term a `*` stands for any letters, none included: `*burger*` finds the notes with a tag containing `burger` (`burger`, `cheeseburger`, `burger-night`), `burger*` a tag starting with it, `*burger` one ending in it, `che*ger` both ends. Capitals are ignored. Without a star a tag is matched whole, as before.
+- It is matched against whole tags as notes carry or inherit them, a value included (`meal=*`, `*=python`), never against a note's text: quoted text search is unchanged.
+- `-*burger*` leaves those notes out; it narrows with the other terms and joins with `OR` like any tag term.
+- Stars side by side are one. A star alone is a wildcard being typed: it stays in the search box and is no term to search by yet (the list stays as it was, as for a lone `-`); the server refuses one sent to it ("Put letters with the *"). The first build dropped a lone star as it was typed, so `*burger*` could not be begun by hand (2026-11-21; the check had typed all its characters at once).
+- **No new note under a wildcard** (decided with the maintainer: there is no single tag to give it): a positive wildcard term in the first clause refuses new notes at the top, with the banner of "A search no new note can match" above ("…a new note would not match *burger*."). A note made under it some other way, moved or pasted there, gets the search's real tags and never the wildcard (`tags_named`).
+- For search only: tag rules still match tags exactly (a wildcard in a rule was judged too complex).
+- No tag holds a `*` (the tag bar drops it), so a term with one is always a wildcard; `/*…*/` is still a comment term.
+- Implementation: `is_wildcard_term`, `wildcard_matches`, `tags_named` (`app/services/search_query.py`), `SearchIndex._search_term_posting_locked` (the union of the matching tags' notes), `enforceTagToken` and `findUnfillableSearchTerm` (`search-syntax-service.js`). Tests: `tests/unit/test_wildcard_search.py`, `wildcard_search_terms.test.mjs`, and a wildcard among the searches a problem report redacts (`test_problem_reports.py`).
+
 ### Text Terms (quoted)
 - Required text: `"some text"` or `'some text'`
 - Forbidden text: `-"some text"` or `-'some text'`

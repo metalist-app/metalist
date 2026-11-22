@@ -123,6 +123,7 @@ Search queries are a whitespace-separated list of terms.
 - Folders add, tags narrow: `Projects/ Archive/ @todo` finds to-dos in Projects or in Archive. A new note made in that search goes in both folders; a note moved there keeps its folder when it is in one of them.
 - A note in a folder is in every folder above it too, for rules as for search: a rule `Projects/ => work` gives `work` to notes in `Projects/Client-A/`. The tag bar still shows only the folder written in it.
 - `-foo` excludes notes that have tag `foo`.
+- A `*` in a tag term stands for any letters: `*burger*` finds notes with a tag containing `burger` (`cheeseburger`, `burger-night`), `burger*` a tag starting with it, `*burger` one ending in it; capitals are ignored, and `-*burger*` leaves those notes out. It matches tags only, a tag's value included (`meal=*`), never words in a note's text (use quotes for text). A search with a wildcard takes no new note at its top: a message says the new note would not match it, because there is no single tag to give the note. Tag rules do not take wildcards.
 
 Tag matching uses the note’s tag-bar string (`notes.tags`) tokenized with the same
 rules as the tag bar:

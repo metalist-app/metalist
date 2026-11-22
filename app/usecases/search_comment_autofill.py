@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Optional, Sequence
 
-from app.services.search_query import is_comment_term, parse_search_query
+from app.services.search_query import is_comment_term, parse_search_query, tags_named
 from app.services.content_formatting import list_known_meta_tag_terms
 from app.services.search_index import extract_tags_for_search, search_index
 from app.services.store import store
@@ -75,7 +75,7 @@ def _extract_positive_tag_terms(search_query: Optional[str]) -> tuple[str, ...]:
     preferred_by_casefold = build_preferred_tag_case_map(search_index.list_tag_frequencies())
     preferred_terms = [
         prefer_existing_tag_case(term, preferred_by_casefold)
-        for term in sorted(first_clause.required_tags)
+        for term in sorted(tags_named(first_clause.required_tags))
     ]
     return tuple(dedupe_tag_terms_by_casefold(preferred_terms))
 
