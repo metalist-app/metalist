@@ -74,8 +74,10 @@ WEAK_THRESHOLDS = (WEAK_BELOW_USUAL, WEAK_BELOW_STRICT)
 # A password is old when its note has not changed for a year.
 DAYS_IN_A_YEAR = 365
 OLD_AFTER = timedelta(days=DAYS_IN_A_YEAR)
-# zxcvbn grows slow on long input and judges a password by its start anyway.
-_ZXCVBN_MAX_CHARACTERS = 100
+# zxcvbn grows slow on long input, judges a password by its start anyway, and refuses more
+# than its own limit (72 by default, raising ValueError): the limit is handed to it, so the
+# two cannot differ.
+_ZXCVBN_MAX_CHARACTERS = 72
 # The words of the note's label and tags that zxcvbn counts against a password; enough for a site
 # name and its tags.
 _MAX_CONTEXT_WORDS = 40
@@ -195,7 +197,7 @@ def _score(value: str, context_words: Sequence[str]) -> int:
     is_known, known = _remembered_scores.lookup(key)
     if is_known:
         return int(known)
-    score = int(zxcvbn(key[0], user_inputs=list(context_words))["score"])
+    score = int(zxcvbn(key[0], user_inputs=list(context_words), max_length=_ZXCVBN_MAX_CHARACTERS)["score"])
     _remembered_scores.store(key, score)
     return score
 

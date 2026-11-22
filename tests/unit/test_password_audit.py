@@ -211,9 +211,9 @@ def _counting_zxcvbn(monkeypatch: pytest.MonkeyPatch) -> list[str]:
     scored: list[str] = []
     real = password_audit.zxcvbn
 
-    def counting(value: str, user_inputs: list[str]) -> dict[str, object]:
+    def counting(value: str, user_inputs: list[str], max_length: int) -> dict[str, object]:
         scored.append(value)
-        return real(value, user_inputs=user_inputs)
+        return real(value, user_inputs=user_inputs, max_length=max_length)
     monkeypatch.setattr(password_audit, "zxcvbn", counting)
     return scored
 
@@ -334,3 +334,11 @@ def test_counting_reads_only_the_notes_whose_tags_can_hold_a_password(note_store
     can_hold_one = {note_id for note_id, *_rest, tags, _updated in TREE if "@password" in tags}
     assert set(read) == can_hold_one
     assert len(can_hold_one) < len(TREE), "the vault here has notes that hold none"
+
+
+def test_a_password_longer_than_the_strength_check_reads_is_still_scored() -> None:
+    """A long password failed the whole audit: the strength library refuses more than 72
+    characters, and it was handed up to 100 (a user's report, 2026-11-22)."""
+    long_password = "correct horse battery staple, " * 4
+    assert len(long_password) > password_audit._ZXCVBN_MAX_CHARACTERS
+    assert password_audit._score(long_password, []) == 4

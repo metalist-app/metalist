@@ -10,7 +10,7 @@ import re
 import urllib.parse
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Dict, FrozenSet, Iterator, List, Mapping, Set, Tuple
+from typing import Dict, FrozenSet, Iterator, List, Mapping, Sequence, Set, Tuple
 
 # Keep existing formatting helper imports available to callers during this extraction.
 from app.services.credential_display import CredentialDisplay
@@ -212,6 +212,9 @@ _BLOCK_HTML_CLOSE_TAG_RE = re.compile(
     r"</(?:blockquote|div|dl|fieldset|figure|figcaption|footer|form|h[1-6]|header|li|ol|p|pre|section|table|tbody|td|tfoot|th|thead|tr|ul)\s*>",
     re.IGNORECASE,
 )
+_INLINE_HTML_TAG_RE = re.compile(r"<(?P<closing>/?)(?P<name>[A-Za-z][A-Za-z0-9]*)\b[^>]*>")
+# Elements with no closing tag.
+_VOID_HTML_ELEMENTS = frozenset({"area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "source", "track", "wbr"})
 _SIZE_TAG_VALUE_RE = re.compile(r"(?:\d+(?:\.\d*)?|\.\d+)")
 
 
@@ -2139,6 +2142,8 @@ class _OpenFrame:
     was_crossed: bool
     block_close_placeholder_indices: List[int]
     block_open_placeholder_indices: List[int]
+    # The inline elements (<b>, <a>, ...) opened inside the region and not yet closed.
+    inline_elements_open_inside: int
 
 
 def _apply_scoped_meta_tags(
@@ -2168,6 +2173,10 @@ def _apply_scoped_meta_tags(
                         placeholder_index = len(output)
                         output.append("")
                         frame.block_close_placeholder_indices.append(placeholder_index)
+            elif not _has_renderer_open(stack):
+                suspended_formatting_frames.extend(
+                    _frames_left_by_inline_tag(tag=part, output=output, stack=stack, suspended=suspended_formatting_frames)
+                )
             output.append(part)
             continue
         if suspended_formatting_frames and part.strip() != "":
@@ -2197,6 +2206,39 @@ def _apply_scoped_meta_tags(
         output[frame.placeholder_index] = frame.opener_text
 
     return _without_breaks_after_quotes("".join(output))
+
+
+def _has_renderer_open(stack: Sequence[_OpenFrame]) -> bool:
+    return any(frame.render_tag is not None for frame in stack)
+
+
+def _frames_left_by_inline_tag(
+    *, tag: str, output: List[str], stack: Sequence[_OpenFrame], suspended: Sequence[_OpenFrame],
+) -> List[_OpenFrame]:
+    """The styled regions an inline tag (not a block's, which the caller handles) takes the text
+    out of: a closing tag whose element opened before the region did, as the `</b>` in
+    `<b>{one</b> two}`. Each gets a place in `output` to close before the tag, and is returned
+    to open again at the next text, as at a block's end: a span left open across the tag is
+    closed there by the browser, and the style stopped where the bold ended (a user's report,
+    2026-11-22). An element opened inside a region is counted, so its own closing tag is not
+    taken for one."""
+    inline = _INLINE_HTML_TAG_RE.fullmatch(tag)
+    if inline is None or inline.group("name").lower() in _VOID_HTML_ELEMENTS or tag.endswith(_SELF_CLOSING_TAG_END) or _BLOCK_HTML_TAG_RE.match(tag) is not None:
+        return []
+    styled = [frame for frame in stack if frame.render_tag is None and frame.open_html != ""]
+    if inline.group("closing") == "":
+        for frame in styled:
+            frame.inline_elements_open_inside += 1
+        return []
+    left: List[_OpenFrame] = []
+    for frame in reversed(styled):
+        if frame.inline_elements_open_inside > 0:
+            frame.inline_elements_open_inside -= 1
+        elif not any(waiting is frame for waiting in suspended):
+            frame.block_close_placeholder_indices.append(len(output))
+            output.append("")
+            left.append(frame)
+    return left
 
 
 def _without_breaks_after_quotes(rendered_html: str) -> str:
@@ -2394,6 +2436,7 @@ def _process_text_segment(
                         was_crossed=False,
                         block_close_placeholder_indices=[],
                         block_open_placeholder_indices=[],
+                        inline_elements_open_inside=0,
                     )
                 )
                 index += run

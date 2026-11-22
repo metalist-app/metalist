@@ -1165,3 +1165,36 @@ def test_the_ai_text_from_the_kept_text_matches_on_a_generated_vault() -> None:
         assert content_formatting_module.agent_note_text_from_kept_text(
             content_html=sanitized, kept_text=strip_html(sanitized), tags=draft.tags,
             title_lookup=_TITLED_PAGES.get) == parsed, draft.content
+
+
+_HIGHLIGHT_OPEN = '<span class="meta-scope meta-box-inline meta-highlighter">'
+
+
+@pytest.mark.parametrize(
+    ("content_html", "expected"),
+    [
+        # The opening brace inside the bold text, the closing one after it: the highlight
+        # stopped where the bold ended (a user's report, 2026-11-22).
+        (
+            "<li><b>{Wildcards:</b> Use <code>*</code> for any letters}for example</li>",
+            f"<li><b>{_HIGHLIGHT_OPEN}Wildcards:</span></b>{_HIGHLIGHT_OPEN} Use <code>*</code> for any letters</span>for example</li>",
+        ),
+        # Two elements deep.
+        (
+            "<div><b><i>{one</i> two</b> three}</div>",
+            f"<div><b><i>{_HIGHLIGHT_OPEN}one</span></i>{_HIGHLIGHT_OPEN} two</span></b>{_HIGHLIGHT_OPEN} three</span></div>",
+        ),
+        # An element that opens and closes inside the region is left alone.
+        (
+            "<div>{plain <b>bold</b> plain}after</div>",
+            f"<div>{_HIGHLIGHT_OPEN}plain <b>bold</b> plain</span>after</div>",
+        ),
+        # A line break is no element to close.
+        (
+            "<div><b>{one<br>two</b> three}</div>",
+            f"<div><b>{_HIGHLIGHT_OPEN}one<br>two</span></b>{_HIGHLIGHT_OPEN} three</span></div>",
+        ),
+    ],
+)
+def test_a_scoped_style_starting_inside_bold_text_goes_on_past_it(content_html: str, expected: str) -> None:
+    assert format_note_content_for_view(content_html=content_html, tags="{@highlight}") == expected
