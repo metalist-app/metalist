@@ -18,7 +18,9 @@ import {
     rootSortModeWithDirection,
 } from '../mode-manager/services/root-sort-service.js';
 import { DATE_RANGE_KINDS, DATE_RANGE_PRESETS } from '../mode-manager/services/date-range-kinds.js';
-import { FILE_FILTER_CHOICES, FILE_FILTER_KINDS, fileFilterMenuLabel } from '../mode-manager/services/file-filter-kinds.js';
+import {
+    FILE_FILTER_CHOICES, FILE_FILTER_KINDS, LINK_FILTER_CHOICES, fileFilterMenuLabel, isLinkFilterKind,
+} from '../mode-manager/services/file-filter-kinds.js';
 import { searchTermsOf, withSearchTerm, withoutSearchTerm } from './phone-search-terms.js';
 import { actionRowHtml } from '../modals/action-row.js';
 
@@ -300,7 +302,8 @@ function sheetHtml() {
     const isReversed = isRootSortModeReversed(sortMode);
     const dateKind = CommandPalette.getDateRangeKind();
     const fileKind = CommandPalette.getFileFilterKind();
-    const moreRows = fileKind === FILE_FILTER_KINDS.NONE ? MORE_SORT_ROWS : [...MORE_SORT_ROWS, FILE_SIZE_SORT_ROW];
+    const hasFiles = fileKind !== FILE_FILTER_KINDS.NONE && !isLinkFilterKind(fileKind);
+    const moreRows = hasFiles ? [...MORE_SORT_ROWS, FILE_SIZE_SORT_ROW] : MORE_SORT_ROWS;
     const moreLabels = moreRows.map(([, label]) => label).join(' · ');
     return `
         <div class="phone-sheet-handle" aria-hidden="true"></div>
@@ -320,6 +323,7 @@ function sheetHtml() {
         <div class="phone-sheet-group" data-phone-group-items="files" hidden>
             ${choiceHtml(`files:${FILE_FILTER_KINDS.NONE}`, 'All Notes', fileKind === FILE_FILTER_KINDS.NONE)}
             ${FILE_FILTER_CHOICES.map(([kind, label]) => choiceHtml(`files:${kind}`, label, kind === fileKind)).join('')}
+            ${LINK_FILTER_CHOICES.map(([kind, label]) => choiceHtml(`files:${kind}`, label, kind === fileKind)).join('')}
         </div>
         ${choiceHtml('untagged', 'Untagged Notes', CommandPalette.getIsUntaggedView())}
         <div class="phone-sheet-buttons">

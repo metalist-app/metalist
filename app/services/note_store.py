@@ -1130,6 +1130,15 @@ class NoteStore:
                 referrer_ids.update(self._backlink_index.get_counts(target_id))
             return {note_id for note_id in referrer_ids if note_id in self._note_map}
 
+    def link_targets_by_note(self) -> Dict[str, FrozenSet[str]]:
+        """What each live note's own text links to or embeds, for the notes that reference
+        anything (the Notes with Links filters, link_filters.py)."""
+        with self._lock:
+            return {
+                note_id: targets for note_id, targets in self._backlink_index.targets_by_note().items()
+                if note_id in self._note_map
+            }
+
     def note_ids_with_inline_images(self) -> Set[str]:
         """The notes whose own text shows a picture inline (an <img>), not an attached file."""
         with self._lock:

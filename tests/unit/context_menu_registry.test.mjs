@@ -577,6 +577,7 @@ test('the background menu groups adding, going, the outline, the view, opening a
         'Sort by',
         'Date Range',
         'Notes with Files',
+        'Notes with Links',
         'Themes',
         '— Open',
         'Export & Print',
@@ -1107,4 +1108,20 @@ test('Rename File… leads a file card menu and follows Save Image or Save Diagr
     }), handlers);
     assert.equal(ids(inline).includes('rename-file'), false);
     assert.equal(ids(buildContextMenuItems(buildNoteContext(), handlers)).includes('rename-file'), false);
+});
+
+// Notes with Links (the maintainer, 2026-11-21): the same filter kept to the notes other notes
+// link to, the notes that link to a note, or the notes with a broken link.
+test('Notes with Links lists its three kinds in the order the maintainer set', async () => {
+    const { FILE_FILTER_KINDS, LINK_FILTER_CHOICES, isFileFilterKind, isLinkFilterKind } = await import(
+        '../../app/static/js/modules/mode-manager/services/file-filter-kinds.js'
+    );
+    assert.deepEqual(LINK_FILTER_CHOICES.map(([kind, label]) => `${kind}: ${label}`), [
+        'links: Containing Links', 'linked: Linked from Other Notes', 'broken-links: With Broken Links',
+    ]);
+    for (const [kind] of LINK_FILTER_CHOICES) {
+        assert.equal(isFileFilterKind(kind) && isLinkFilterKind(kind), true, kind);
+    }
+    // A kind of file is no link kind: only those views are ordered by File Size.
+    assert.equal(isLinkFilterKind(FILE_FILTER_KINDS.IMAGE) || isLinkFilterKind(FILE_FILTER_KINDS.NONE), false);
 });

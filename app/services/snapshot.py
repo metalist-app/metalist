@@ -23,7 +23,8 @@ from app.services.embedded_references import is_content_collapsible
 from app.services.embedded_references import resolve_held_source
 from app.services.embedded_references import render_collapsed_note_content_with_embeds
 from app.services.embedded_references import render_note_content_with_embeds
-from app.services.file_kinds import FILE_KIND_IMAGE
+from app.services.file_kinds import FILE_KIND_IMAGE, is_link_filter_kind
+from app.services.link_filters import link_filter_note_ids
 from app.services.file_registry import file_registry
 from app.services.file_storage import get_file_reference_record
 from app.services.find_text import count_find_stops, count_occurrences, read_comment_text
@@ -458,7 +459,11 @@ def _narrow_to_file_filter(
     edited stays while it is edited, also once its file is taken out."""
     if file_filter is None:
         return search_scope
-    file_note_ids = note_store.note_ids_referencing(file_registry.file_ids_of_kind(file_filter))
+    if is_link_filter_kind(file_filter):
+        # Notes with Links: the same filter, about links instead of a kind of file.
+        file_note_ids = link_filter_note_ids(file_filter)
+    else:
+        file_note_ids = note_store.note_ids_referencing(file_registry.file_ids_of_kind(file_filter))
     if file_filter == FILE_KIND_IMAGE:
         # A picture pasted into a note is an image too, though not an attached file.
         file_note_ids |= note_store.note_ids_with_inline_images()

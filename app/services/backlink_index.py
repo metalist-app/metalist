@@ -71,6 +71,11 @@ class BacklinkIndex:
             return frozenset()
         return frozenset(self._outgoing[note_id])
 
+    def targets_by_note(self) -> dict[str, frozenset[str]]:
+        """What each note's own text links to or embeds (notes, files, ids that are gone), for
+        the notes that reference anything: the Notes with Links filters (link_filters.py)."""
+        return {note_id: frozenset(targets) for note_id, targets in self._outgoing.items()}
+
     def inline_image_note_ids(self) -> frozenset[str]:
         return frozenset(self._inline_image_note_ids)
 
