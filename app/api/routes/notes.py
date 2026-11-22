@@ -43,6 +43,7 @@ from app.api.note_requests import (
     SearchSuggestionInteractionRequest,
     TabSearchInteractionRequest,
     TagSuggestionsRequest,
+    ReferenceLinesRequest,
     ReferenceSuggestionsRequest,
     TagDetailsRequest,
     EditPreviewRequest,
@@ -168,6 +169,7 @@ from app.services.view_diff import generate_diff_ops
 from app.services.tab_state import tab_state_store
 from app.services.edit_locks import SearchLockedElsewhere, edit_locks, root_of
 from app.services.backlinks import list_backlinks_for_note
+from app.services.reference_lines import NO_NOTE, first_line_of, note_lines, note_named_by_id
 from app.services.reference_suggestions import suggest_references
 from app.services.client_state_service import copied_note_ids, remember_copied_note
 from app.services.undo_state import maybe_reset_on_context
@@ -1033,6 +1035,42 @@ def reference_suggestions(request: Request, payload: ReferenceSuggestionsRequest
             }
             for suggestion in suggestions
         ],
+    }
+
+
+@router.post("/notes/reference-lines")
+@transactional_route
+def reference_lines(request: Request, payload: ReferenceLinesRequest) -> Dict[str, object]:
+    """The lines of a note, for the list `[[` opens once a `#` is typed (docs/ui/references.md,
+    "Links to a place in a note"): the note is the one the text before the `#` names, its id or
+    the first note the list would offer for it; noteId is '' when it names none."""
+    token = _require_bearer_token(request)
+    editing_note_id = payload["editing_note_id"]
+    _require_note_present(editing_note_id, context="notes.reference-lines")
+    note_query = payload["note_query"].strip()
+    note_id, first_line = note_named_by_id(note_query), ""
+    if note_id != NO_NOTE:
+        first_line = first_line_of(note_id)
+    else:
+        tab_id = payload["tabId"]
+        view = (
+            payload["search"], payload["isUntaggedView"], _resolve_tab_sort_mode(tab_id),
+            _resolve_tab_date_filter(tab_id), _resolve_tab_file_filter(tab_id),
+        )
+        offered = suggest_references(
+            query=note_query, editing_note_id=editing_note_id, copied_note_ids=copied_note_ids(token=token),
+            view=view, view_note_ids=lambda: _view_note_ids(payload),
+        )
+        # A password or username note has no lines to offer.
+        named = [suggestion for suggestion in offered if suggestion.credential == ""]
+        if named:
+            note_id, first_line = named[0].note_id, named[0].first_line
+    if note_id == NO_NOTE:
+        return {"noteId": NO_NOTE, "firstLine": "", "lines": []}
+    found = note_lines(note_id=note_id, first_line=first_line, line_query=payload["line_query"])
+    return {
+        "noteId": found.note_id, "firstLine": found.first_line,
+        "lines": [{"text": line.text, "isHeading": line.is_heading} for line in found.lines],
     }
 
 

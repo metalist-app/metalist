@@ -113,6 +113,20 @@ function assertArrowBesideHeading(shown, state) {
     `${state}: the fold arrow (middle ${arrowMiddle}) is beside the heading's first line (${shown.letter.top} to ${shown.letter.bottom})`);
 }
 
+// A click on a tile opens what it shows (the maintainer, 2026-11-21: clicking a tile did
+// nothing): a file that is no picture, here a Markdown file drawn as a small page, opens in the
+// viewer, and Escape closes it.
+async function tileOpensItsFile(page, noteId) {
+  await page.click(`.note[data-note-id="${noteId}"] .meta-gallery-tile`);
+  await page.waitForSelector('.file-viewer-overlay', {visible: true});
+  await idle(page);
+  const shown = await page.$eval('.file-viewer-overlay', overlay => overlay.textContent);
+  assert.ok(FILE_NAMES.some(name => shown.includes(name)), `the viewer shows the tile's file: ${shown.slice(0, 80)}`);
+  await page.keyboard.press('Escape');
+  await page.waitForFunction(() => document.querySelector('.file-viewer-overlay') === null);
+  await idle(page);
+}
+
 async function galleryCases(page, noteId) {
   const grid = await layout(page, noteId);
   assert.equal(grid.isOutline, false, 'a gallery starts as its grid');
@@ -388,6 +402,7 @@ export async function checkGallery(page) {
     await page.$eval(`.note[data-note-id="${ids[0]}"]`, note => note.scrollIntoView({block: 'center'}));
     await idle(page);
     await galleryCases(page, ids[0]);
+    await tileOpensItsFile(page, ids[0]);
     await page.$eval(`.note[data-note-id="${textless[0]}"]`, note => note.scrollIntoView({block: 'center'}));
     await idle(page);
     await arrowIgnoresTileText(page, textless[0]);

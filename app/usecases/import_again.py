@@ -10,6 +10,7 @@ from __future__ import annotations
 import calendar
 import re
 from collections.abc import Callable, Mapping
+from collections.abc import Set as AbstractSet
 from dataclasses import dataclass
 from datetime import date, datetime, time
 from typing import Dict, List
@@ -26,6 +27,8 @@ EARLIER_NOTES_CHOICES = (KEEP_BOTH, REPLACE, REPLACE_EDITED)
 # "Changed since", as a date field gives it: 2026-11-01.
 _DAY_RE = re.compile(r"(?P<year>\d{4})-(?P<month>\d{2})-(?P<day>\d{2})")
 _NO_DAY = ""
+# The standing note of a file that never came in.
+NO_NOTE = ""
 _FIRST_MONTH = 1
 _LAST_MONTH = 12
 
@@ -74,6 +77,10 @@ class ImportedBefore:
 
     met: Mapping[str, MetFile]
     choice: str
+    # Every file the folder brought into this place before, by path, its root note still there.
+    earlier: Mapping[str, EarlierFile]
+    # The files Changed since leaves out, by path: read, for the links to them, never written.
+    left_out: AbstractSet[str]
 
     def is_left(self, path: str) -> bool:
         """The file is as it was imported and its notes are to be replaced when it changes:
@@ -91,11 +98,25 @@ class ImportedBefore:
             return self.choice == REPLACE_EDITED
         return True
 
+    def is_written(self, path: str) -> bool:
+        """The file's notes come in: it is neither left out by Changed since nor left as it is."""
+        return path not in self.left_out and not self.is_left(path)
+
+    def standing_root_id(self, path: str) -> str:
+        """The root note a file this import does not write has in the vault already, '' when
+        it never came in: where a link to the file leads."""
+        assert not self.is_written(path), "only a file that is not written has a note standing for it"
+        if path in self.earlier:
+            return self.earlier[path].file.root_id
+        return NO_NOTE
+
     def root_id(self, path: str, new_id: str) -> str:
         """The id the file's root note has: its old note's when that one stays or is replaced
         (links to it keep leading there), else the new one."""
-        if self.is_left(path) or self.is_replaced(path):
+        if self.is_replaced(path):
             return self.met[path].earlier.file.root_id
+        if not self.is_written(path) and self.standing_root_id(path) != NO_NOTE:
+            return self.standing_root_id(path)
         return new_id
 
     def summary(self) -> Dict[str, object]:
@@ -114,6 +135,7 @@ class ImportedBefore:
 
 def meet_earlier_import(
     *, folder_name: str, prefix_folder: str, fingerprints: Mapping[str, Callable[[], str]], choice: str,
+    left_out: AbstractSet[str],
 ) -> ImportedBefore:
     """Which of the files about to come in (each path with a way to fingerprint it, asked only
     for a file that came in before) the same folder brought into the same place before."""
@@ -129,7 +151,7 @@ def meet_earlier_import(
             earlier=before, is_changed=fingerprint() != before.file.fingerprint,
             is_edited=notes_fingerprint(before.file.root_id) != before.file.written,
         )
-    return ImportedBefore(met=met, choice=choice)
+    return ImportedBefore(met=met, choice=choice, earlier=earlier, left_out=left_out)
 
 
 def nothing_to_bring_in(before: ImportedBefore, paths: List[str]) -> bool:

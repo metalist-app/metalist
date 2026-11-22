@@ -1234,6 +1234,25 @@ export const NotesAPI = {
         });
     },
 
+    // The lines of the note named before a `#` in the `[[` list, narrowed by the words after it:
+    // { noteId ('' when no note is named), firstLine, lines: [{ text, isHeading }] }.
+    async fetchReferenceLines(noteQuery, lineQuery, editingNoteId, signal) {
+        if (typeof noteQuery !== 'string' || typeof lineQuery !== 'string') {
+            throw new Error('NotesAPI.fetchReferenceLines requires the text before and after the #');
+        }
+        if (typeof editingNoteId !== 'string' || editingNoteId === '') {
+            throw new Error('NotesAPI.fetchReferenceLines requires editingNoteId');
+        }
+        if (signal === null || typeof signal !== 'object') {
+            throw new Error('NotesAPI.fetchReferenceLines requires an AbortSignal');
+        }
+        return this._apiCall(CONFIG.API.NOTES.REFERENCE_LINES, {
+            method: 'POST',
+            body: JSON.stringify({ note_query: noteQuery, line_query: lineQuery, editing_note_id: editingNoteId, ...this.viewScope() }),
+            signal: signal
+        });
+    },
+
     // Retry failed link titles: progress (status "idle" before any run), start, stop.
     async getLinkTitleRetry() {
         return this._apiCall(CONFIG.API.NOTES.LINK_TITLE_RETRY, { method: 'GET' });

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from app.services.credential_display import CredentialDisplay
 from app.utils.byte_sizes import MIB
+from app.utils.first_clause import first_clause
 import html
 from contextvars import ContextVar
 import re
@@ -114,6 +115,10 @@ _EMBED_OPEN = "![["
 _REFERENCE_CLOSE = "]]"
 # Between a reference's UUID and its link text: [[UUID|shown text]].
 _LINK_TEXT_SEPARATOR = "|"
+# Between a reference's UUID and the text it leads to in the note: [[UUID#text in the note]].
+_SECTION_SEPARATOR = "#"
+# Between a note's first line and the text a link leads to in it, as the link reads.
+_SECTION_LABEL_SEPARATOR = " > "
 # The first meaningful fragment, plus a second one to tell whether more follow.
 _PREVIEW_HEAD_FRAGMENT_COUNT = 2
 
@@ -150,12 +155,16 @@ class ReferenceToken:
     # The text after the first |, shown instead of the target's first line; None
     # with no |. An embed's is unused (docs/ui/references.md, "Link text").
     link_text: Optional[str]
+    # The text after # that the link leads to inside its note; '' for the whole note
+    # (docs/ui/references.md, "Links to a place in a note").
+    section: str
 
 
 @dataclass(frozen=True, slots=True)
 class ReferenceTarget:
     note_id: str
     link_text: Optional[str]
+    section: str
 
 
 def parse_reference_inner(inner: str) -> Optional[ReferenceTarget]:
@@ -163,15 +172,19 @@ def parse_reference_inner(inner: str) -> Optional[ReferenceTarget]:
     (agreed 2026-10-27, docs/ui/references.md, "Link text"). The text runs to the
     ]], further | included; it holds no bracket or line break and is not empty.
     None when it is not a reference."""
-    note_id, separator, link_text = inner.partition(_LINK_TEXT_SEPARATOR)
+    place, separator, link_text = inner.partition(_LINK_TEXT_SEPARATOR)
+    # A place in the note: [[UUID#text in it]] (the maintainer, 2026-11-21). The text runs to
+    # the | or the ]]; with none after the #, the link is to the whole note.
+    note_id, _section_mark, section = place.partition(_SECTION_SEPARATOR)
     note_id = note_id.strip()
+    section = html.unescape(section).strip()
     if not _is_valid_embed_note_id(note_id):
         return None
     if separator == "":
-        return ReferenceTarget(note_id=note_id, link_text=None)
+        return ReferenceTarget(note_id=note_id, link_text=None, section=section)
     if link_text.strip() == "" or any(character in link_text for character in "[]\n"):
         return None
-    return ReferenceTarget(note_id=note_id, link_text=link_text)
+    return ReferenceTarget(note_id=note_id, link_text=link_text, section=section)
 
 
 class _FootnoteReferencePreview(HTMLParser):
@@ -928,6 +941,7 @@ def _replace_reference_tokens_in_text(
             host_note_id=host_note_id,
             reference_note_id=target.note_id,
             link_text=target.link_text,
+            section=target.section,
             occurrence_index=occurrence_index,
             is_embed=is_embed,
             context=context,
@@ -1028,6 +1042,7 @@ def _collect_reference_tokens_in_text(
                     is_embed=is_embed,
                     occurrence_index=occurrence_index,
                     link_text=target.link_text,
+                    section=target.section,
                 )
             )
             occurrence_index += 1
@@ -1064,6 +1079,7 @@ def _render_reference_block(
     host_note_id: str,
     reference_note_id: str,
     link_text: Optional[str],
+    section: str,
     occurrence_index: int,
     is_embed: bool,
     context: EmbedRenderContext,
@@ -1133,13 +1149,28 @@ def _render_reference_block(
     else:
         body_html = _render_missing_reference_body(reference_note_id, element=_REFERENCE_ELEMENTS[is_in_paragraph])
 
+    # A link to a place in a note says where it leads, and reads "first line > those words"
+    # unless it has text of its own. An embed always shows its whole note.
+    section_attribute = ""
+    if section != "" and note_exists and not display_as_embed:
+        section_attribute = f' data-ref-section="{html.escape(section, quote=True)}"'
+        if link_text is None:
+            # Each by its first part (first_clause.py): a link is a line's worth, not two sentences.
+            first_line, _redacted_credential = _resolve_note_reference_preview(
+                reference_note_id=reference_note_id, context=context, credentials=credentials,
+            )
+            body_html = _render_link_text_body(
+                reference_note_id=reference_note_id, static_export=static_export,
+                link_text=html.escape(f"{first_clause(first_line)}{_SECTION_LABEL_SEPARATOR}{first_clause(section)}"),
+            )
+
     element = _REFERENCE_ELEMENTS[is_in_paragraph]
     return (
         f'<{element} class="{wrapper_classes}" '
         f'data-ref-host-note-id="{escaped_host_note_id}" '
         f'data-ref-note-id="{escaped_reference_note_id}" '
         f'data-ref-occurrence="{occurrence_index}" '
-        f'data-ref-mode="{mode}" '
+        f'data-ref-mode="{mode}"{section_attribute} '
         f'data-embed-ref-id="{escaped_reference_note_id}">'
         f'<{element} class="note-reference-content">{body_html}</{element}>'
         f"</{element}>"

@@ -107,6 +107,7 @@ export const CONFIG = {
             PRIORITIZE_TAG_SUGGESTIONS: `${API_NOTES_BASE}/prioritize-tag-suggestions`,
             TAG_SUGGESTIONS: `${API_NOTES_BASE}/tag-suggestions`,
             REFERENCE_SUGGESTIONS: `${API_NOTES_BASE}/reference-suggestions`,
+            REFERENCE_LINES: `${API_NOTES_BASE}/reference-lines`,
             TAG_DETAILS: `${API_NOTES_BASE}/tag-details`,
             EDIT_PREVIEW: `${API_NOTES_BASE}/edit-preview`,
             FORMAT_PREVIEW: `${API_NOTES_BASE}/format-preview`,

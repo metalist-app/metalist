@@ -2,6 +2,14 @@
 
 What changed in each MetaList release, newest first.
 
+## Changes in 0.33.0
+
+- **A link can lead to words inside a note.** Type `[[`, a note's name and `#` (`[[Trip plan#`): the list shows that note's lines, headings first, and letters after the `#` narrow them. Choosing a line writes a link to those words. Clicking the link opens the note with the words brought into view and marked; the mark goes at your next click, scroll or key. Any text in the note or in a note under it can be pointed at, not only a heading. If the words are later reworded, the link still opens the note.
+- A link to a place reads the note's first line, ` > ` and the words, each shortened to its first sentence or the part before its first comma: `galleries are confusing > only some pdfs displayed?`. `|title` still gives a link text of its own.
+- **A click on a gallery tile opens what it shows.** A PDF, a Markdown, text, code or data file, and any file shown by its badge open in the viewer; a picture opens full screen, as before. Some tiles did nothing when clicked.
+- **Importing a folder again:** a link from a note that comes in to a note the import leaves alone (unchanged, or left out by Changed since) now leads to that note in your vault.
+- Fixed: in 0.32.0, importing an Obsidian or Markdown folder again with Replace could leave a link to a heading in an unchanged file leading nowhere.
+
 ## Changes in 0.32.0
 
 - **Importing a folder again can replace what came in before.** When some of a folder's files were imported earlier (the same folder into the same place), the Summary says when, how many changed since and how many of those you edited in MetaList, and asks: **Keep both** (chosen at first) or **Replace the old notes**. Replace puts a changed file's notes where the old ones were, so links to them keep working, leaves unchanged files alone, and keeps notes you edited unless you tick their box. Folders imported with an earlier MetaList are not recognized: importing them again only adds, as before. Bookmarks still only add.

@@ -6,7 +6,9 @@ since" brings in only the files changed on or after a day."""
 
 from __future__ import annotations
 
+import html
 import os
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -338,3 +340,75 @@ def test_setting_and_removing_a_password_rewrites_every_record(tmp_path: Path, n
     assert "Bread.md" in plain.state_json and plain.state_encryption_nonce is None
     assert "Bread.md" not in encrypted.state_json and encrypted.state_encryption_nonce == b"n" * 12
     assert decrypted == plain
+
+
+# --- Links to notes this import does not write (found 2026-11-21, after 0.32.0) -----------------
+# A link from a note that comes in to a note the import leaves alone (left out by Changed since,
+# or unchanged under Replace) leads to that note where it is in the vault already, and never to
+# a note that does not exist.
+
+_REFERENCE_RE = re.compile(r"\[\[([0-9a-f-]{36})")
+
+
+def _every_reference_leads_somewhere(store: NoteStore) -> bool:
+    return all(
+        store.has_note(target)
+        for note_id in store.snapshot()
+        for target in _REFERENCE_RE.findall(html.unescape(store.get_note(note_id).content))
+    )
+
+
+def test_changed_since_links_to_a_note_left_out_that_is_in_the_vault(tmp_path: Path, note_store: NoteStore) -> None:
+    folder = _recipes(tmp_path)
+    for name in RECIPES:
+        _changed_on(folder / name, datetime(2026, 10, 1, 12, 0))
+    _first_import(folder)
+    bread = _id_of(note_store, "Bread")
+    _write(folder, {"Soup.md": "Stock, and see [[Bread]]"})
+
+    _import(folder, earlier_notes="replace", changed_since="2026-11-01", imported_at=SECOND_IMPORT, prefix="")
+
+    assert _titles(note_store) == ["Bread", "Soup", "Tea"]
+    assert bread in note_store.get_note(_id_of(note_store, "Soup")).content
+
+
+def test_changed_since_leaves_a_link_as_written_when_its_note_never_came_in(tmp_path: Path, note_store: NoteStore) -> None:
+    folder = _recipes(tmp_path)
+    for name in ("Bread.md", "Tea.md"):
+        _changed_on(folder / name, datetime(2026, 10, 1, 12, 0))
+    # The Summary counts the link as one that stays as written.
+    assert _preview(folder, earlier_notes="keep", changed_since="2026-11-01")["missingLinkCount"] == 1
+
+    _import(folder, earlier_notes="keep", changed_since="2026-11-01", imported_at=FIRST_IMPORT, prefix="")
+
+    assert _titles(note_store) == ["Soup"]
+    # Now that Soup is in the vault, nothing of the folder changed since the day leads nowhere.
+    soup = html.unescape(note_store.get_note(_id_of(note_store, "Soup")).content)
+    assert "[[Bread]]" in soup
+    assert _REFERENCE_RE.findall(soup) == []
+
+
+def test_replace_links_to_a_heading_of_an_unchanged_file_lead_to_its_note(tmp_path: Path, note_store: NoteStore) -> None:
+    folder = tmp_path / "Recipes"
+    _write(folder, {"Bread.md": "Intro\n\n## Dough\n\nFlour and water", "Soup.md": "See [[Bread#Dough]]"})
+    CmdImportObsidianVault(
+        source="markdown", folder_path=str(folder), split_mode="paragraphs", content_format=CONTENT_MARKDOWN,
+        folder_prefix="", add_to_existing=True, images=KEEP_ORIGINALS, token=TOKEN, imported_at=FIRST_IMPORT,
+        folder_name="Recipes", changed_since="", earlier_notes="keep",
+    ).execute()
+    assert _every_reference_leads_somewhere(note_store)
+    bread = _id_of(note_store, "Bread")
+    _write(folder, {"Soup.md": "Stock, and see [[Bread#Dough]]"})
+
+    CmdImportObsidianVault(
+        source="markdown", folder_path=str(folder), split_mode="paragraphs", content_format=CONTENT_MARKDOWN,
+        folder_prefix="", add_to_existing=True, images=KEEP_ORIGINALS, token=TOKEN, imported_at=SECOND_IMPORT,
+        folder_name="Recipes", changed_since="", earlier_notes="replace",
+    ).execute()
+
+    assert _every_reference_leads_somewhere(note_store)
+    soup_notes = [
+        html.unescape(note_store.get_note(note_id).content) for note_id in note_store.snapshot()
+        if "Stock, and see" in note_store.get_note(note_id).content
+    ]
+    assert len(soup_notes) == 1 and bread in soup_notes[0]

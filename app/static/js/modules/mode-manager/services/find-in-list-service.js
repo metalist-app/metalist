@@ -34,6 +34,8 @@ const DIAGRAM_CODE_SELECTOR = 'code.language-mermaid';
 
 const moduleState = ApplicationState.createFields('find-in-list-service', {
     isOpen: false,
+    // Open without its bar, for the words a followed link leads to (showLinkedText).
+    isQuiet: false,
     text: '',
     // Changes with every new find (text, tab, search, sort): answers to an older one are dropped.
     generation: 0,
@@ -529,7 +531,10 @@ function paint() {
             continue;
         }
         const ranges = pageRangesOf(noteElement);
-        marks.push(...ranges.marks);
+        // A followed link marks the words it leads to alone, not their every occurrence.
+        if (!moduleState.isQuiet) {
+            marks.push(...ranges.marks);
+        }
         const current = moduleState.current;
         if (current !== null && current.noteId === match.noteId && isShown(match, current.occurrence)) {
             currentRange = pageRangeOf(match, current.occurrence);
@@ -731,6 +736,13 @@ export async function openFindBar() {
         bar = createBar();
     }
     placeBar(bar);
+    if (moduleState.isQuiet) {
+        // The words a link led to are marked: find takes over from there, with its bar.
+        stopWaitingToUnmark();
+        update(moduleState, 'isQuiet', false);
+        bar.hidden = false;
+        paint();
+    }
     if (!moduleState.isOpen) {
         update(moduleState, 'isOpen', true);
         bar.hidden = false;
@@ -743,12 +755,67 @@ export async function openFindBar() {
     renderCount();
 }
 
+// --- The words a followed link leads to (docs/ui/references.md, "Links to a place in a note") ---
+// A link written [[note#words]] opens its note's page; the words are then found there as find
+// finds them (folded away too), brought into view and marked, with no bar. The mark goes at
+// the person's first click, wheel, touch or key (the maintainer, 2026-11-21): their own click
+// on the link asked for it, and the next thing they do says they have seen it.
+const UNMARKING_EVENTS = ['pointerdown', 'wheel', 'touchstart', 'keydown'];
+
+function unmarkLinkedText() {
+    if (moduleState.isQuiet) {
+        void closeFindBar();
+    }
+}
+
+function stopWaitingToUnmark() {
+    for (const type of UNMARKING_EVENTS) {
+        window.removeEventListener(type, unmarkLinkedText, true);
+    }
+}
+
+/**
+ * Find text on the page just opened and mark its first occurrence, with no find bar. Called
+ * inside the command that opened the page. Words that are nowhere on the page mark nothing.
+ */
+export async function showLinkedText(text) {
+    if (typeof text !== 'string' || text.trim() === '') {
+        throw new Error('showLinkedText requires the words the link leads to');
+    }
+    if (moduleState.isOpen) {
+        await closeFindBar();
+    }
+    let bar = barElement();
+    if (bar === null) {
+        bar = createBar();
+    }
+    bar.hidden = true;
+    inputElement().value = text;
+    update(moduleState, 'isQuiet', true);
+    update(moduleState, 'isOpen', true);
+    ModeContext.addListener(onModeChange);
+    watchList();
+    await startFind(text);
+    if (!moduleState.isQuiet) {
+        return;
+    }
+    if (allMatches().length === 0) {
+        await closeFindBar();
+        return;
+    }
+    for (const type of UNMARKING_EVENTS) {
+        window.addEventListener(type, unmarkLinkedText, { capture: true, passive: true });
+    }
+}
+
 // Escape, ×, or editing a note: the marks go, and a note find opened folds back.
 export async function closeFindBar() {
     if (!moduleState.isOpen) {
         return;
     }
     update(moduleState, 'isOpen', false);
+    stopWaitingToUnmark();
+    update(moduleState, 'isQuiet', false);
     moduleState.generation += 1;
     update(moduleState, 'windows', []);
     update(moduleState, 'current', null);

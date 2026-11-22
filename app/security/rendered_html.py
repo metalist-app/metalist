@@ -44,6 +44,8 @@ RENDERER_ATTRIBUTES: dict[str, frozenset[str]] = {
         "aria-hidden", "aria-live", "class", "contenteditable", "data-copy-value", "data-embed-note-id",
         "data-embed-ref-id", "data-file-ref-id", "data-file-revision", "data-latex-source", "data-preview-state",
         "data-ref-host-note-id", "data-ref-mode", "data-ref-note-id", "data-ref-occurrence", "title",
+        # The words a link leads to in its note (embedded_references._render_reference_block).
+        "data-ref-section",
         # An audio or video file's player (embedded_references._render_media_embed).
         "data-media-kind", "data-media-state",
         # A PDF's first page shown as its picture (embedded_references._render_first_page_picture).
@@ -62,6 +64,7 @@ RENDERER_ATTRIBUTES: dict[str, frozenset[str]] = {
         "aria-hidden", "aria-label", "class", "data-copy-value", "data-embed-ref-id", "data-file-ref-id",
         "data-file-revision", "data-footnote-scope", "data-latex-source", "data-preview-state", "data-redacted",
         "data-ref-host-note-id", "data-ref-mode", "data-ref-note-id", "data-ref-occurrence", "data-status", "role",
+        "data-ref-section",
         # A Markdown task's box (markdown_rendering._task_box).
         "aria-checked", "data-task-index",
     }),
