@@ -316,3 +316,21 @@ def test_a_note_deleted_while_the_audit_runs_does_not_fail_it(note_store: NoteSt
 
     assert result["leakCheck"] == "done"
     assert ("bank-pw", 0) in _groups(result)
+
+
+# The reminder asks for the count whenever the page comes back into view. Reading every note's
+# text for it took 8 to 12 seconds on a large vault and slowed every other request meanwhile
+# (the maintainer's problem report, 2026-11-22: "slow to expand note").
+def test_counting_reads_only_the_notes_whose_tags_can_hold_a_password(note_store: NoteStore, monkeypatch: pytest.MonkeyPatch) -> None:
+    read: list[str] = []
+    plain_text = password_audit._plain_text
+
+    def recording(record):
+        read.append(record.id)
+        return plain_text(record)
+
+    monkeypatch.setattr(password_audit, "_plain_text", recording)
+    assert count_passwords() == 4
+    can_hold_one = {note_id for note_id, *_rest, tags, _updated in TREE if "@password" in tags}
+    assert set(read) == can_hold_one
+    assert len(can_hold_one) < len(TREE), "the vault here has notes that hold none"

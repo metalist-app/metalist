@@ -18,15 +18,35 @@ const moduleState = ApplicationState.createFields('editing-surface', {
     leaveWindow: null,
     switchInWindow: null,
     followWindow: null,
+    redrawWindow: null,
     // Whether the last press was in the window being edited: a note switched to after it is
     // edited there, after a press anywhere else in the list.
     isLastPressInWindow: false,
+    // The drawing of a floating window a note is being dragged in (mouse-events.js), or null.
+    dragTree: null,
 });
 
 /** The element the editor looks for notes in: the edited window's tree, or the whole page. */
 export function noteLookupRoot() {
     if (moduleState.windowTree !== null) return moduleState.windowTree;
+    if (moduleState.dragTree !== null) return moduleState.dragTree;
     return document;
+}
+
+/** A note is dragged in a floating window: the drag finds its notes in that window's drawing. */
+export function startDraggingInWindow(tree) {
+    if (!(tree instanceof HTMLElement)) throw new Error('startDraggingInWindow requires the window\'s drawing');
+    if (moduleState.dragTree !== tree) moduleState.dragTree = tree;
+}
+
+/** The drag in a floating window is over (released, or its move made). */
+export function stopDraggingInWindow() {
+    if (moduleState.dragTree !== null) moduleState.dragTree = null;
+}
+
+/** The drawing of the floating window a note is being dragged in, or null. */
+export function draggedWindowTree() {
+    return moduleState.dragTree;
 }
 
 /** The note's element where editing happens, or null when it is not there. */
@@ -68,17 +88,19 @@ export function editedWindowScrollArea() {
 /**
  * A note is now edited in a floating window: `tree` holds the window's notes, `host` is the
  * window, `leave()` takes the window out of editing (after the note is saved and left) and
- * `switchTo(noteId, clickAnchor)` edits another of its notes there.
+ * `switchTo(noteId, clickAnchor)` edits another of its notes there. `redraw()` draws the edited
+ * note again as the server has it, after something other than typing changed it.
  */
-export function startEditingInWindow({ tree, host, windowNoteId, leave, switchTo, follow }) {
+export function startEditingInWindow({ tree, host, windowNoteId, leave, switchTo, follow, redraw }) {
     if (!(tree instanceof HTMLElement) || !(host instanceof HTMLElement) || !host.contains(tree)) {
         throw new Error('startEditingInWindow requires the window and its tree of notes');
     }
     if (typeof windowNoteId !== 'string' || windowNoteId === '') {
         throw new Error('startEditingInWindow requires the note the window shows');
     }
-    if (typeof leave !== 'function' || typeof switchTo !== 'function' || typeof follow !== 'function') {
-        throw new Error('startEditingInWindow requires how to leave, switch and follow');
+    if (typeof leave !== 'function' || typeof switchTo !== 'function' || typeof follow !== 'function'
+        || typeof redraw !== 'function') {
+        throw new Error('startEditingInWindow requires how to leave, switch, follow and redraw');
     }
     if (moduleState.windowTree !== null) throw new Error('A note is already edited in a floating window');
     moduleState.windowTree = tree;
@@ -87,6 +109,7 @@ export function startEditingInWindow({ tree, host, windowNoteId, leave, switchTo
     moduleState.leaveWindow = leave;
     moduleState.switchInWindow = switchTo;
     moduleState.followWindow = follow;
+    moduleState.redrawWindow = redraw;
     if (!moduleState.isLastPressInWindow) moduleState.isLastPressInWindow = true;
 }
 
@@ -100,6 +123,7 @@ export function leaveEditingWindow() {
     moduleState.leaveWindow = null;
     moduleState.switchInWindow = null;
     moduleState.followWindow = null;
+    moduleState.redrawWindow = null;
     leave();
 }
 
@@ -113,6 +137,16 @@ export async function switchesInWindow(noteId, clickAnchor) {
     const isTaken = await moduleState.switchInWindow(noteId, clickAnchor);
     if (typeof isTaken !== 'boolean') throw new Error('A floating window answers whether it edits the note');
     return isTaken;
+}
+
+/**
+ * The edited note was changed by something other than typing (a copied note pasted into it):
+ * true when it is edited in a window, which has drawn it again as the server has it.
+ */
+export async function redrawsEditedNoteInWindow() {
+    if (moduleState.windowTree === null) return false;
+    await moduleState.redrawWindow();
+    return true;
 }
 
 /** The list was drawn again while a note is edited in a window: the window follows its notes. */

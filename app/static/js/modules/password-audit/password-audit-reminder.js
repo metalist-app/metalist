@@ -6,6 +6,7 @@
 // card for a week; an audit that runs restarts the clock.
 
 import { ApplicationState } from '../application-state.js';
+import { shareWhileRunning } from '../share-while-running.js';
 import { appNoticeStack } from '../app-notice-stack.js';
 import { ModeContextInstance as ModeContext } from '../mode-manager/mode-context.js';
 import {
@@ -50,7 +51,8 @@ class PasswordAuditReminderService {
         }
         this._started = true;
         this._preferences = preferences;
-        this._fetchPasswordCount = fetchPasswordCount;
+        // Checks made while a count runs wait for that one: counting costs the server real work.
+        this._fetchPasswordCount = shareWhileRunning(fetchPasswordCount);
         this._openAudit = openAudit;
         document.addEventListener('pointerdown', this._handleInteraction, { capture: true });
         document.addEventListener('keydown', this._handleInteraction, { capture: true });

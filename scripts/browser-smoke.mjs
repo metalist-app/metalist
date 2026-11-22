@@ -109,6 +109,7 @@ import {checkLinkIcons} from './browser-link-icon-regressions.mjs';
 import {checkReferencedByBadge} from './browser-referenced-by-badge-regressions.mjs';
 import {checkGallery} from './browser-gallery-regressions.mjs';
 import {checkFloatingEdit} from './browser-floating-edit-regressions.mjs';
+import {checkFloatingDrag} from './browser-floating-drag-regressions.mjs';
 import {checkDiagramCopies} from './browser-diagram-copy-regressions.mjs';
 import {checkSectionLinks} from './browser-section-link-regressions.mjs';
 import {checkEditPreviews} from './browser-edit-preview-regressions.mjs';
@@ -478,6 +479,10 @@ try {
     await checkDiagramCopies(page);
     assert.deepEqual(errors, []);
     console.log(`PASS diagram copy regressions in ${await browser.version()}`);
+  } else if (process.env.BROWSER_TEST_SUITE === 'floating-drag') {
+    await checkFloatingDrag(page);
+    assert.deepEqual(errors, []);
+    console.log(`PASS floating drag regressions in ${await browser.version()}`);
   } else if (process.env.BROWSER_TEST_SUITE === 'floating-edit') {
     await checkFloatingEdit(page);
     assert.deepEqual(errors, []);

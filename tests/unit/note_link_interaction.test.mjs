@@ -43,6 +43,8 @@ function harness(isEditing) {
         resolveDiagramTarget: () => null,
         // Not a copy or show button (value-buttons-service.js).
         handleValueButtonClick: () => false, VALUE_BUTTONS_SELECTOR: '.meta-value-buttons',
+        // No note is dragged in a floating window here (editing-surface.js).
+        startDraggingInWindow() {}, stopDraggingInWindow() {},
     };
     const handlers = new Function('ApplicationState', ...Object.keys(dependencies), `${source}\nreturn {
         handleImmediateMouseDown, handleMoveDragMouseDown, handleClick,

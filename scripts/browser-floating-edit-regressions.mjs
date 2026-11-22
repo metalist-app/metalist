@@ -555,6 +555,91 @@ async function foldsAreSharedWithTheList(page, ids) {
   await idle(page);
 }
 
+// Deleting the note edited in a window, from its menu (the maintainer, 2026-11-22: the window
+// kept showing the deleted note as edited, and deleting it again failed with a 404): edit mode
+// is over, and the window shows its notes without the deleted one.
+async function deletingTheEditedNoteLeavesTheWindowReading(page, ids) {
+  await openWindow(page, ids.trip);
+  const point = await pointInWindowNote(page, ids.packing, 1);
+  await page.mouse.click(point.x, point.y);
+  await idle(page);
+  await page.mouse.click(point.x, point.y, {button: 'right'});
+  await page.waitForSelector('.context-menu.is-visible');
+  await pause(SETTLE_MS);
+  for (const entry of await page.$$('.context-menu.is-visible:not(.context-menu-submenu) .context-menu-item')) {
+    if (await entry.$eval('.context-menu-item-label', label => label.textContent) === 'Delete Note') {
+      await entry.click();
+      break;
+    }
+  }
+  await idle(page);
+  const state = await editingState(page);
+  assert.deepEqual({isEditing: state.isEditing, isInWindow: state.isInWindow, windowShowsNotes: state.windowShowsNotes, windows: state.windows},
+    {isEditing: false, isInWindow: false, windowShowsNotes: true, windows: 1}, 'the window is back to showing its notes');
+  await page.waitForFunction(id => document.querySelector('.floating-note-window').shadowRoot.querySelector(`.note[data-note-id="${id}"]`) === null, {}, ids.packing);
+  await closeWindows(page);
+}
+
+// A right-click on a note of the window that is not being edited (the maintainer, 2026-11-22):
+// the note is edited there and its menu opens, with the items of an edited note.
+async function aRightClickOpensTheNoteMenu(page, ids) {
+  await openWindow(page, ids.trip);
+  const point = await pointInWindowNote(page, ids.train, 2);
+  await page.mouse.click(point.x, point.y, {button: 'right'});
+  await page.waitForSelector('.context-menu.is-visible');
+  await pause(SETTLE_MS);
+  const items = await page.$$eval('.context-menu.is-visible:not(.context-menu-submenu) .context-menu-item-label',
+    found => found.map(label => label.textContent));
+  assert.ok(items.includes('Delete Note') && items.includes('Copy Note'), `the note menu opens: ${JSON.stringify(items)}`);
+  const state = await editingState(page);
+  assert.deepEqual({noteId: state.noteId, isInWindow: state.isInWindow}, {noteId: ids.train, isInWindow: true},
+    'the right-clicked note is edited in the window');
+  await page.keyboard.press('Escape');
+  await idle(page);
+  await closeWindows(page);
+}
+
+// A copied note pasted into a blank note edited in a window (the maintainer, 2026-11-22: the
+// window kept showing it blank while the list showed its text): the window shows the text too,
+// and the note is still the one edited there.
+async function aNotePastedIntoABlankNoteShowsInTheWindow(page, ids) {
+  await openWindow(page, ids.trip);
+  const point = await pointInWindowNote(page, ids.trip, 2);
+  await page.mouse.click(point.x, point.y);
+  await idle(page);
+  // A blank note under "Trip plan", edited in the window.
+  await pressWith(page, [MODIFIER, 'Shift'], 'Enter');
+  const blankId = (await editingState(page)).noteId;
+  assert.notEqual(blankId, ids.trip, 'a new note is edited');
+  const wanted = await page.evaluate(id => document.querySelector(`#notes-container .note[data-note-id="${id}"] > .note-content`).textContent, ids.groceries);
+  await page.evaluate(async (groceriesId) => {
+    const {NotesAPI} = await import('/static/js/modules/api-client.js');
+    const {actionPasteNoteSibling} = await import('/static/js/modules/mode-manager/actions/note-actions.js');
+    const {CommandGate} = await import('/static/js/modules/mode-manager/services/command-gate-service.js');
+    await NotesAPI.copyNote(groceriesId);
+    // What ⌘V does with a copied note (keyboard-events.js).
+    await CommandGate.run('test.paste', () => actionPasteNoteSibling());
+  }, ids.groceries);
+  await idle(page);
+  const shown = await page.evaluate((id) => {
+    const text = root => root.querySelector(`.note[data-note-id="${id}"] > .note-content`).textContent;
+    return {window: text(document.querySelector('.floating-note-window .floating-note-editing-tree')),
+      list: text(document.querySelector('#notes-container'))};
+  }, blankId);
+  assert.deepEqual(shown, {window: wanted, list: wanted});
+  const state = await editingState(page);
+  assert.deepEqual({noteId: state.noteId, windowEditable: state.windowEditable}, {noteId: blankId, windowEditable: [blankId]},
+    'the note is still the one edited in the window');
+  await page.keyboard.press('Escape');
+  await idle(page);
+  await page.evaluate(async (id) => {
+    const {NotesAPI} = await import('/static/js/modules/api-client.js');
+    await NotesAPI.deleteNote(id);
+  }, blankId);
+  await idle(page);
+  await closeWindows(page);
+}
+
 export async function checkFloatingEdit(page) {
   await page.setViewport(WINDOW);
   const ids = await makeNotes(page);
@@ -573,6 +658,9 @@ export async function checkFloatingEdit(page) {
     await nothingGoesBesideTheWindowsNote(page, ids);
     await aGalleryShowsItsGridOnly(page, ids);
     await foldsAreSharedWithTheList(page, ids);
+    await aNotePastedIntoABlankNoteShowsInTheWindow(page, ids);
+    await aRightClickOpensTheNoteMenu(page, ids);
+    await deletingTheEditedNoteLeavesTheWindowReading(page, ids);
   }, async () => {
     await closeWindows(page);
     await page.evaluate(async noteIds => {

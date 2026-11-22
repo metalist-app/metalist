@@ -11,6 +11,8 @@ const SETTLED_QUIET_MS = 300;
 const REQUESTS_QUIET_MS = 100;
 // The status check runs once a second; the refresh for the lock it takes follows at once.
 const LIVE_REFRESH_WITHIN_MS = 5000;
+// How far the window is dragged by its title, in pixels: it moves by exactly this.
+const TITLE_DRAG = {x: 40, y: 25};
 
 async function settled(page) {
   await waitForAppQuiet(page, SETTLED_QUIET_MS);
@@ -209,7 +211,7 @@ export async function checkFloatingNotes(page) {
   }, fixture);
   await waitForWindowText(page, first, 'Floating child changed live');
   await waitForWindowText(page, second, 'Floating child changed live');
-  assert.equal(await page.$eval(`[data-floating-note-id="${second}"]`, host => host.shadowRoot.querySelector('.floating-note-title').textContent), '↗ Floating child changed live');
+  assert.equal(await page.$eval(`[data-floating-note-id="${second}"]`, host => host.shadowRoot.querySelector('.floating-note-title').textContent), 'Floating child changed live');
 
   await page.click('#search-input');
   await page.type('#search-input', 'floating-query-with-no-matches');
@@ -242,25 +244,29 @@ export async function checkFloatingNotes(page) {
   });
   assert.equal((await page.$$('.floating-note-window')).length, 2);
 
-  // The header follows the source using regular ML3 reference navigation,
-  // leaving both floating windows and their geometry intact.
-  const originalTab = await page.evaluate(async () => {
+  // The title is the note's first line as text, and the bar it is in drags the window (the
+  // maintainer, 2026-11-22: a title that opened the note's own view was clicked by accident).
+  // A click on it goes nowhere; a drag from it moves the window by exactly the drag.
+  const viewNow = () => page.evaluate(async () => {
     const {ModeContextInstance: state} = await import('/static/js/modules/mode-manager/mode-context.js');
-    return state.activeTabId;
+    return {tab: state.activeTabId, search: state.getExecutedSearchQuery()};
   });
-  const sourceLink = await windowPoint(page, first, '.floating-note-title');
-  await page.mouse.click(sourceLink.x, sourceLink.y);
-  await page.waitForFunction(async (original, root) => {
-    const {ModeContextInstance: state} = await import('/static/js/modules/mode-manager/mode-context.js');
-    return !state.isLoading && state.activeTabId !== original && state.getExecutedSearchQuery().includes(root);
-  }, {}, originalTab, fixture.root);
+  const viewBefore = await viewNow();
+  const titleText = await windowPoint(page, first, '.floating-note-title');
+  await page.mouse.click(titleText.x, titleText.y);
+  await waitForAppQuiet(page, REQUESTS_QUIET_MS);
+  assert.deepEqual(await viewNow(), viewBefore, 'a click on the title goes nowhere');
+  assert.equal(await page.$eval(`[data-floating-note-id="${first}"]`, host => host.shadowRoot.querySelector('.floating-note-title').tagName), 'SPAN');
+  const rectBefore = await readRect(page, first);
+  await page.mouse.move(titleText.x, titleText.y);
+  await page.mouse.down();
+  await page.mouse.move(titleText.x + TITLE_DRAG.x, titleText.y + TITLE_DRAG.y, {steps: 4});
+  await page.mouse.up();
+  const rectAfter = await readRect(page, first);
+  assert.deepEqual({x: rectAfter.x - rectBefore.x, y: rectAfter.y - rectBefore.y, width: rectAfter.width, height: rectAfter.height},
+    {x: TITLE_DRAG.x, y: TITLE_DRAG.y, width: rectBefore.width, height: rectBefore.height}, 'a drag from the title moves the window');
   assert.equal((await page.$$('.floating-note-window')).length, 2);
   assert.deepEqual(await readRect(page, second), resized);
-  await page.evaluate(async () => {
-    const {navigateBackFromReferenceContext} = await import('/static/js/modules/mode-manager/events/keyboard-events.js');
-    const {CommandGate} = await import('/static/js/modules/mode-manager/services/command-gate-service.js');
-    await CommandGate.run('smoke.floating-source-back', () => navigateBackFromReferenceContext());
-  });
   const passwordTitle = await page.evaluate(async password => {
     const {openFloatingNote, closeFloatingNote} = await import('/static/js/modules/mode-manager/services/floating-note-service.js');
     const {CommandGate} = await import('/static/js/modules/mode-manager/services/command-gate-service.js');

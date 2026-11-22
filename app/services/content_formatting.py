@@ -1506,6 +1506,14 @@ class ScopedPasswordRegion:
     closer: str
 
 
+def has_scoped_password_tag(tags: str) -> bool:
+    """Whether a note's tags mark password regions in its text (`((@password))`): without one its
+    text holds none, whatever it says."""
+    if not isinstance(tags, str):
+        raise TypeError(f"tags must be a string, got {type(tags)}")
+    return _WRAPPER_OPENER_RE.search(tags) is not None and _SCOPED_PASSWORD in tags.casefold()
+
+
 def scoped_password_regions(text: str, tags: str) -> List[ScopedPasswordRegion]:
     """Each password region of `text` (a note's plain text), in order, found as
     _replace_scoped_passwords finds them (Password Audit, docs/ui/password-audit.md)."""
@@ -1513,7 +1521,7 @@ def scoped_password_regions(text: str, tags: str) -> List[ScopedPasswordRegion]:
         raise TypeError(f"text must be a string, got {type(text)}")
     if not isinstance(tags, str):
         raise TypeError(f"tags must be a string, got {type(tags)}")
-    if _WRAPPER_OPENER_RE.search(tags) is None or _SCOPED_PASSWORD not in tags.casefold():
+    if not has_scoped_password_tag(tags):
         return []
     wrappers = _scoped_password_wrappers(tags)
     openers = {key: _delimiter_run_re(key[0], key[1]) for key in wrappers}

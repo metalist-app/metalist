@@ -10,9 +10,9 @@ import { downloadFileReference } from './file-reference-service.js';
 import { openFileViewer, opensInViewer } from './file-viewer-service.js';
 import { playMediaFile } from './media-player-service.js';
 import { handleValueButtonClick } from './value-buttons-service.js';
-import { openReferenceInNewTab } from '../events/keyboard-events.js';
+import { beginMoveDragInWindow, continueMoveDragInWindow, finishMoveDragInWindow, takeClickAfterMoveDrag } from '../events/mouse-events.js';
 import { copyTextToClipboard, normalizeCopyableText } from '../events/mouse-events.js';
-import { editedWindowHost, recordPress } from '../../editing-surface.js';
+import { editedWindowHost, findNoteContentElement, recordPress } from '../../editing-surface.js';
 import { drawWindowNotes, editNoteInWindow } from './floating-note-editing.js';
 import { captureClickAnchor } from './viewport-hold-service.js';
 import { watchFoldability } from './collapse-affordance-service.js';
@@ -44,6 +44,8 @@ const FIRST_WINDOW_TOP_PX = 90;
 const NEW_WINDOW_WIDTH_PX = 460;
 const NEW_WINDOW_HEIGHT_PX = 380;
 const RESIZE_KEY_STEP_PX = 20;
+// MouseEvent.button of the right button.
+const SECONDARY_MOUSE_BUTTON = 2;
 
 function viewport() {
     return {width: window.innerWidth, height: window.innerHeight};
@@ -163,7 +165,6 @@ async function refreshWindow(id) {
     entry.status.textContent = snapshot.status === 'deleted' ? 'This note was deleted.' : '';
     if (snapshot.status === 'deleted') {
         entry.title.textContent = 'Deleted note';
-        entry.title.setAttribute('aria-disabled', 'true');
     }
     if (snapshot.status === 'unchanged' || entry.markup === drawingOf(snapshot)) return;
     entry.markup = drawingOf(snapshot);
@@ -173,8 +174,7 @@ async function refreshWindow(id) {
     if (snapshot.status === 'ready') drawWindowNotes(entry.tree, snapshot.structure, snapshot.notes, null);
     entry.scroll.scrollTop = scrollTop;
     if (snapshot.status === 'ready') {
-        entry.title.textContent = `↗ ${getFloatingNoteTitle(entry.tree)}`;
-        entry.title.setAttribute('aria-disabled', 'false');
+        entry.title.textContent = getFloatingNoteTitle(entry.tree);
     }
     for (const control of entry.tree.querySelectorAll('.meta-status-toggle, .meta-markdown-task-toggle, .note-shell-run, input, textarea, select')) {
         control.setAttribute('disabled', '');
@@ -193,13 +193,6 @@ export async function refreshFloatingNotes() {
 }
 
 function handleWindowClick(event, target, id) {
-    const title = target.closest('.floating-note-title');
-    if (title) {
-        event.preventDefault();
-        if (title.getAttribute('aria-disabled') === 'true') return;
-        void CommandGate.run('floatingNote.source', () => openReferenceInNewTab(moduleState.windows[id].noteId));
-        return;
-    }
     if (target.closest('.floating-note-close')) {
         event.preventDefault();
         // A note edited in it is saved and left first.
@@ -284,6 +277,29 @@ function handleWindowClick(event, target, id) {
     }
 }
 
+// A right-click on a note of the window's drawing (the maintainer, 2026-11-22: "I can't
+// right-click on a note not in editing mode inside of the floating window to delete it or do
+// other things"). The note menu works on a note the editor can find, which a window's drawing
+// is not until one of its notes is edited: so the note is edited there first, where right-clicked,
+// then its menu opens at the same spot, the note's own, as a right-click on it while edited.
+function openNoteMenuInWindow(event, target, id) {
+    const content = target.closest('.note-content');
+    if (content === null || !moduleState.windows[id].tree.contains(content)) return;
+    event.preventDefault();
+    const note = content.closest('.note[data-note-id]');
+    const noteId = note.dataset.noteId;
+    const anchor = captureClickAnchor(note, event.clientX, event.clientY);
+    const where = { clientX: event.clientX, clientY: event.clientY };
+    void CommandGate.run('floatingNote.menu', () => editNoteInWindow(windowToEdit(id), noteId, anchor)).then(() => {
+        const edited = findNoteContentElement(noteId);
+        // Not edited after all (another view holds it, or it left the window): no menu.
+        if (edited === null || !edited.isContentEditable) return;
+        edited.dispatchEvent(new MouseEvent('contextmenu', {
+            bubbles: true, cancelable: true, composed: true, button: SECONDARY_MOUSE_BUTTON, ...where,
+        }));
+    });
+}
+
 // A window as floating-note-editing.js edits in it.
 function windowToEdit(id) {
     const entry = moduleState.windows[id];
@@ -318,7 +334,7 @@ function handleWindowEvent(event) {
     if (!target) return;
     if (event.type === 'pointerdown') {
         bringToFront(id);
-        if (event.button !== 0 || target.closest('.floating-note-close, .floating-note-title')) return;
+        if (event.button !== 0 || target.closest('.floating-note-close')) return;
         const kind = target.closest('.floating-note-resize') ? 'resize' : 'move';
         if (kind === 'move' && !target.closest('.floating-note-header')) return;
         finishGesture();
@@ -326,12 +342,28 @@ function handleWindowEvent(event) {
         host.setPointerCapture(event.pointerId);
         host.focus({preventScroll: true});
         event.preventDefault();
+    } else if (event.type === 'mousedown') {
+        // A press on a note of the window's drawing may start dragging it (mouse-events.js).
+        if (path.includes(entry.tree)) {
+            beginMoveDragInWindow(event, target, { tree: entry.tree, scrollArea: entry.scroll });
+        }
+    } else if (event.type === 'mousemove') {
+        continueMoveDragInWindow(event, target);
+    } else if (event.type === 'mouseup') {
+        finishMoveDragInWindow(event, target);
     } else if (event.type === 'pointermove' && moduleState.gesture?.pointerId === event.pointerId) {
         setRect(entry, moveFloatingNoteRect(moduleState.gesture, event.clientX, event.clientY, viewport()));
     } else if (event.type === 'pointerup' || event.type === 'pointercancel') {
         finishGesture();
     } else if (event.type === 'click') {
+        // The click that ends a drag is no click on the note.
+        if (takeClickAfterMoveDrag()) {
+            event.preventDefault();
+            return;
+        }
         handleWindowClick(event, target, id);
+    } else if (event.type === 'contextmenu') {
+        openNoteMenuInWindow(event, target, id);
     } else if (event.type === 'keydown') {
         if (event.key === 'Escape') {
             event.preventDefault();

@@ -22,11 +22,12 @@ export function createFloatingNoteElements(id) {
 
     const header = document.createElement('header');
     header.className = 'floating-note-header';
-    const title = document.createElement('a');
+    // The note's first line, as text: the whole bar drags the window (the maintainer, 2026-11-22:
+    // a title that led to the note's own view was clicked by accident, and a note is edited in
+    // its window now).
+    const title = document.createElement('span');
     title.className = 'floating-note-title';
-    title.href = '#';
-    title.textContent = '↗ Loading…';
-    title.setAttribute('aria-disabled', 'true');
+    title.textContent = 'Loading…';
     const dragHandle = document.createElement('span');
     dragHandle.className = 'floating-note-drag-handle';
     dragHandle.textContent = '⠿';

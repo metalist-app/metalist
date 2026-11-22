@@ -1,4 +1,4 @@
-import { findNoteElement, isEditingInWindow, leaveEditingWindow, switchesInWindow } from '../../editing-surface.js';
+import { findNoteElement, isEditingInWindow, switchesInWindow } from '../../editing-surface.js';
 import { ModeContextInstance as ModeContext } from '../mode-context.js';
 import * as Logger from '../mode-logger.js';
 import { DOMUtils } from '../../dom-utils.js';
@@ -179,9 +179,8 @@ export async function actionDeselectNote() {
         }
     }
 
+    // A floating window it was edited in shows its notes again (floating-note-editing.js listens).
     clearSelectionStateForDeselect(ModeContext);
-    // Saved and left: a floating window it was edited in shows its notes again.
-    leaveEditingWindow();
 
     const refreshOptions = {startedAt: startedAt};
     if (viewportHold !== null) {
@@ -246,7 +245,6 @@ export function actionExitEditingWithoutSavingOrRefreshing() {
 
     ModeContext.setEditing(false);
     ModeContext.setCurrentNoteId(null);
-    leaveEditingWindow();
 
     if (ModeContext.currentContent !== null) {
         ModeContext.setCurrentContent(null);

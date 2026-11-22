@@ -52,8 +52,10 @@ function harness() {
         editedWindowHost: () => null, recordPress() {}, editNoteInWindow: async () => {}, actionDeselectNote: async () => {},
         // The notes as the list draws them (floating-note-editing.js): here, the root's text.
         drawWindowNotes(container, structure, notes) { container.html = notes[structure[0].id].content; container.draws++; },
-        watchFoldability() {}, captureClickAnchor() {}, collapseNote: async () => {}, expandNote: async () => {},
+        watchFoldability() {}, captureClickAnchor() {}, findNoteContentElement: () => null, collapseNote: async () => {}, expandNote: async () => {},
         galleryElementOf() {}, galleryNoteIdOf() {}, toggleGalleryOutline: async () => {},
+        // No note is dragged in a window here (mouse-events.js).
+        beginMoveDragInWindow() {}, continueMoveDragInWindow() {}, finishMoveDragInWindow() {}, takeClickAfterMoveDrag: () => false,
     };
     const build = new Function(...Object.keys(dependencies), source.replace(/^import .*;\r?\n/gm, '').replace(/^export /gm, '')
         + '\nreturn {openFloatingNote, closeFloatingNote, closeAllFloatingNotes, refreshFloatingNotes};');

@@ -1,4 +1,4 @@
-import { findNoteElement, isEditedWindowsOwnNote } from '../../editing-surface.js';
+import { findNoteElement, isEditedWindowsOwnNote, redrawsEditedNoteInWindow } from '../../editing-surface.js';
 import { showGalleryAndThoseAboveAsOutline } from '../services/gallery-view-service.js';
 import { ModeContextInstance as ModeContext } from '../mode-context.js';
 import * as Logger from '../mode-logger.js';
@@ -1367,6 +1367,11 @@ async function pasteAsSibling(actionName, requestPaste) {
     if (newNoteId === currentNoteId) {
         const startedAt = performance.now();
         const newContent = await actionRefreshAndMaybeSelect({ startedAt, context: 'pasteNoteSiblingInto' });
+        // Edited in a floating window: the window draws it again, and the page behind stays.
+        if (await redrawsEditedNoteInWindow()) {
+            ModeContext.resetEditSessionState({ startedCollapsed: false });
+            return true;
+        }
         if (ModeContext.currentContent !== newContent && newContent !== null) {
             ModeContext.setCurrentContent(newContent);
         }

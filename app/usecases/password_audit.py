@@ -36,6 +36,7 @@ from app.config import PASSWORD_MIN_ZXCVBN_SCORE
 from app.security.sensitive_cache import SensitiveMemo
 from app.services.content_formatting import (
     ScopedPasswordRegion,
+    has_scoped_password_tag,
     is_password_note,
     scoped_password_regions,
     text_shown_without_passwords,
@@ -139,6 +140,11 @@ def passwords_in(record: NoteRecord) -> List[FoundPassword]:
             return []
         return [FoundPassword(note_id=record.id, kind=WHOLE_NOTE, region_index=0, value=value,
                               can_replace=True, is_kept_after_replacing=False)]
+    # Its tags decide whether its text can hold a password. Most notes' cannot, and reading every
+    # note's text to find that out took seconds on a large vault, each time the reminder asked
+    # for the count (problem report 2026-11-22, "slow to expand note").
+    if not has_scoped_password_tag(record.tags):
+        return []
     text = _plain_text(record)
     regions = scoped_password_regions(text, record.tags)
     is_kept = _REPLACED_LINE.match(text) is not None

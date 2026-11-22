@@ -2,7 +2,8 @@ import { ModeContextInstance as ModeContext } from '../mode-context.js';
 import { DOMUtils } from '../../dom-utils.js';
 import { NotesAPI } from '../../api-client.js';
 import { attachEditorSurface } from '../../editor-toolbar.js';
-import { editedWindowHost, findNoteElement, isEditingInWindow, startEditingInWindow } from '../../editing-surface.js';
+import { ApplicationState } from '../../application-state.js';
+import { editedWindowHost, findNoteElement, isEditingInWindow, leaveEditingWindow, startEditingInWindow } from '../../editing-surface.js';
 import { CommandGate } from './command-gate-service.js';
 import { actionDeselectNote, actionSelectNote } from '../actions/selection-actions.js';
 import { actionSaveNote } from '../actions/content-actions.js';
@@ -27,6 +28,23 @@ import { markGalleryNotesIn } from './gallery-view-service.js';
 // saves and leaves edit mode as in the list; the window stays.
 
 const EDITING_TREE_CLASS = 'floating-note-editing-tree';
+
+const moduleState = ApplicationState.createFields('floating-note-editing', {
+    // Whether this module listens for edit mode ending (from the first note edited in a window).
+    isWatchingEditMode: false,
+});
+
+// Edit mode can end in several ways (Escape, a click outside, deleting the edited note, an
+// undo, a lost connection, the note leaving the search): whichever it is, the window a note was
+// edited in goes back to showing its notes. Deleting the edited note once left the window
+// showing it as edited, and deleting it again failed with a 404 (the maintainer, 2026-11-22).
+function watchEditModeEnding() {
+    if (moduleState.isWatchingEditMode) return;
+    moduleState.isWatchingEditMode = true;
+    ModeContext.addListener((property, value) => {
+        if (property === 'editing' && value === false) leaveEditingWindow();
+    });
+}
 
 /**
  * A window as this module needs it: `id`, its note (`noteId`), its element (`element`), its
@@ -169,6 +187,7 @@ export async function editNoteInWindow(floatingWindow, noteId, clickAnchor) {
     }
     const drawn = await drawEditableNotes(floatingWindow, noteId);
     if (drawn === null) return;
+    watchEditModeEnding();
     ModeContext.setCurrentNoteId(noteId);
     ModeContext.setEditing(true);
     startEditingInWindow({
@@ -180,12 +199,23 @@ export async function editNoteInWindow(floatingWindow, noteId, clickAnchor) {
         follow: () => {
             void CommandGate.runWhenFree('floatingNote.follow', () => followEditedNote(floatingWindow));
         },
+        redraw: () => redrawEditedNote(floatingWindow),
     });
     // The view takes the note's lock, and the list draws its copy with the pencil.
     await actionRefreshAndMaybeSelect({ startedAt: performance.now() });
     // Refused (another view edits it): the refresh left edit mode, and the window with it.
     if (!ModeContext.isEditing || ModeContext.currentNoteId !== noteId || !isEditingInWindow()) return;
     startEditingElement(noteId, drawn.noteElement, clickAnchor);
+}
+
+// The edited note as the server has it now (a copied note was pasted into it): drawn again and
+// still edited, the caret at its end. It showed blank in the window while the list showed the
+// pasted text (the maintainer, 2026-11-22).
+async function redrawEditedNote(floatingWindow) {
+    const noteId = ModeContext.currentNoteId;
+    const drawn = await drawEditableNotes(floatingWindow, noteId);
+    if (drawn === null) throw new Error('The note edited in a floating window is no longer in it');
+    startEditingElement(noteId, drawn.noteElement, null);
 }
 
 // Another note of the same window, from a click or a key in it, or a new note made there: the
