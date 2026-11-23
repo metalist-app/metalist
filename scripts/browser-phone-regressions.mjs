@@ -193,28 +193,31 @@ async function backCase(page) {
   await waitQuiet(page);
 }
 
+const LOOK_AGAIN_MS = 50;
 // The sort order chosen in the sheet is the one shown, and its command has ended. When it never
 // comes, the failure says what the page was doing: this wait timed out once in a whole-suite run
 // (2026-11-22, turns just built) and passed in every run alone, so the next time must explain itself.
 async function waitForSortMode(page, sortMode) {
-  const reached = () => page.waitForFunction(async wanted => {
+  const doing = () => page.evaluate(async () => {
     const {ModeContextInstance: state} = await import('/static/js/modules/mode-manager/mode-context.js');
-    return state.activeTabSortMode === wanted && !state.isLoading;
-  }, {}, sortMode);
-  await reached().catch(async error => {
-    const doing = await page.evaluate(async () => {
-      const {ModeContextInstance: state} = await import('/static/js/modules/mode-manager/mode-context.js');
-      const {CommandGate} = await import('/static/js/modules/mode-manager/services/command-gate-service.js');
-      const turns = await import('/static/js/modules/mode-manager/services/turns.js');
-      const sheet = document.getElementById('phone-sheet');
-      return {
-        sortMode: state.activeTabSortMode, isLoading: state.isLoading, isEditing: state.isEditing,
-        modals: [...state.modalStack], commandBusy: CommandGate.isBusy(), turnTaken: turns.isTurnTaken(),
-        turnRunning: turns.turnRunning(), sheetShown: sheet !== null && !sheet.hidden,
-      };
-    });
-    throw new Error(`the sort order never became ${sortMode}: ${JSON.stringify(doing)}`, {cause: error});
+    const {CommandGate} = await import('/static/js/modules/mode-manager/services/command-gate-service.js');
+    const turns = await import('/static/js/modules/mode-manager/services/turns.js');
+    const sheet = document.getElementById('phone-sheet');
+    return {
+      sortMode: state.activeTabSortMode, isLoading: state.isLoading, isEditing: state.isEditing,
+      modals: [...state.modalStack], commandBusy: CommandGate.isBusy(), turnTaken: turns.isTurnTaken(),
+      turnRunning: turns.turnRunning(), sheetShown: sheet !== null && !sheet.hidden,
+    };
   });
+  const startedAt = Date.now();
+  for (;;) {
+    const now = await doing();
+    if (now.sortMode === sortMode && !now.isLoading) return;
+    if (Date.now() - startedAt > page.getDefaultTimeout()) {
+      throw new Error(`the sort order never became ${sortMode}: ${JSON.stringify(now)}`);
+    }
+    await new Promise(resolve => setTimeout(resolve, LOOK_AGAIN_MS));
+  }
 }
 
 async function sheetCase(page) {

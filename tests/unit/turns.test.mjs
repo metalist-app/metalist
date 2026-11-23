@@ -89,18 +89,20 @@ test('in any order of asking and any lengths of work, turns run one at a time in
             if (random() < 0.5) await pause(Math.floor(random() * LONGEST_MS));
             const workMs = Math.floor(random() * LONGEST_MS);
             const fails = random() < 0.2;
-            turns.push(takeTurn(`turn ${index}`, async () => {
+            // Settled as it is made: a turn that fails is looked at below, not left unwatched.
+            turns.push(Promise.allSettled([takeTurn(`turn ${index}`, async () => {
                 running += 1;
                 assert.equal(running, 1, `seed ${seed}: turn ${index} started while another ran`);
                 started.push(index);
                 await pause(workMs);
                 running -= 1;
                 if (fails) throw new Error('expected');
-            }).then(() => 'ok', (error) => error.message));
+            })]));
         }
-        const outcomes = await Promise.all(turns);
+        const outcomes = (await Promise.all(turns)).map(([outcome]) => outcome);
         assert.deepEqual(started, [...Array(count).keys()], `seed ${seed}: the order asked`);
-        assert.ok(outcomes.every((outcome) => outcome === 'ok' || outcome === 'expected'), `seed ${seed}: ${outcomes}`);
+        const unexpected = outcomes.filter((outcome) => outcome.status === 'rejected' && outcome.reason.message !== 'expected');
+        assert.deepEqual(unexpected, [], `seed ${seed}: only the failures the turns were told to have`);
         assert.equal(isTurnTaken(), false, `seed ${seed}: nothing is left waiting`);
     }
 });
