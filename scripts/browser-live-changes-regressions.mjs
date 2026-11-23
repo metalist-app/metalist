@@ -605,12 +605,14 @@ async function askedOfADeletedContextCase(here, there) {
     await here.waitForFunction(() => window.__heldReading.asked, {timeout: SHOWS_WITHIN_MS});
     assert.equal((await contextIds(here)).active, gone, `${name}: this view should not have heard of the delete yet`);
 
-    await ask(gone);
+    // What is asked waits its turn behind the reading (turns.js), so it ends once that is let go.
+    const asking = ask(gone);
     await pause(SETTLE_MS);
     const messages = await here.evaluate(() => [...document.querySelectorAll('.floating-message-error')].map(card => card.textContent));
     assert.deepEqual(messages, [], `${name} of a context deleted there: no error should show`);
 
     await releaseContextsReading(here);
+    await asking;
     await here.waitForFunction(async gone => {
       const {ModeContextInstance} = await import('/static/js/modules/mode-manager/mode-context.js');
       return !ModeContextInstance.tabOrder.includes(gone);
@@ -618,6 +620,12 @@ async function askedOfADeletedContextCase(here, there) {
     await idle(here);
     await pause(SETTLE_MS);
     assert.deepEqual((await contextIds(here)).order, kept, `${name} of a context deleted there: the list should be as before it was made`);
+    // The context shown instead was not the one asked: it keeps its own order and view.
+    const shownInstead = await here.evaluate(async () => {
+      const {ModeContextInstance: mode} = await import('/static/js/modules/mode-manager/mode-context.js');
+      return {sort: mode.activeTabSortMode, untagged: mode.isUntaggedView};
+    });
+    assert.deepEqual(shownInstead, {sort: 'normal', untagged: false}, `${name} of a context deleted there: the context shown instead is left as it was`);
   }
   here.off('pageerror', noteError);
   assert.deepEqual(errors, [], 'asking of a context deleted there should raise no errors');

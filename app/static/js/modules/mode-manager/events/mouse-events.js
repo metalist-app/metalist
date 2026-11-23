@@ -1775,7 +1775,10 @@ function handleClick(event) {
         event.stopPropagation();
         const clearButton = event.target.closest('#root-sort-indicator-clear');
         if (clearButton) {
-            void CommandPalette.setSortMode('normal');
+            // A command, as the date and file chips' ×: a second click while it runs is dropped.
+            void CommandGate.run('rootSortIndicator.clear', async () => {
+                await CommandPalette.setSortMode('normal');
+            });
         }
         return;
     }
@@ -1810,7 +1813,9 @@ function handleClick(event) {
         event.stopPropagation();
         const clearButton = event.target.closest('#untagged-view-indicator-clear');
         if (clearButton) {
-            void CommandPalette.setIsUntaggedView(false);
+            void CommandGate.run('untaggedViewIndicator.clear', async () => {
+                await CommandPalette.setIsUntaggedView(false);
+            });
         }
         return;
     }

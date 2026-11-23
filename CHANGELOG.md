@@ -14,6 +14,9 @@ What changed in each MetaList release, newest first.
 - The password count behind the Password Audit reminder is much faster in large vaults, which could slow expanding a note right after starting.
 - Fixed: the Password Audit failed with an error when a password was longer than 72 characters.
 - Fixed: a style put on part of a line (a highlight, a colour) stopped where bold text ended when it started inside the bold text.
+- **One thing at a time changes the list.** What MetaList does in the background (loading more notes as you scroll, showing a change made in another window, saving where you scrolled to) and what you ask for now take turns. Before, they could overlap, and a rare error showed when you changed search context while the list was still loading ("response arrived after the active tab changed").
+- Changing the sort order, the Untagged view, a date range or a file filter from the command palette, or by the × on its chip, waits for background work to finish first, and a second quick click on the × is ignored.
+- A choice made in the command palette while something else is still running is carried out when that has finished.
 - Fixed in 0.34.0, left out of its notes: an error could show when background work was listed in a different order than before.
 
 ## Changes in 0.34.0

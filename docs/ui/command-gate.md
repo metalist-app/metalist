@@ -39,7 +39,17 @@ Before, only commands took turns among themselves. Background work looked whethe
 - A turn's work must not await a turn it asks for itself: that one waits for this one. A command stuck that way is named by the watchdog.
 - No turn: the once-a-second status check. It only reads, and hands what it finds to `liveChanges.apply`.
 
-**Known gap, not built.** Many controls still do their whole work outside the gate, not as a command: choosing a sort order, the Untagged view, a date or file filter (the chips, the phone layout, and the palette's entries call `CommandPalette.setSortMode` and its siblings directly), folding a note by its arrow, deleting a note outside edit mode. Their list refresh takes a turn, so it never runs beside background work; the steps before it (saving an edit, asking the server, taking the tabs) do not. `refreshesOutsideTurns()` lists them as they are met. Making them commands is the same piece of work as "commands wait instead of being dropped", since a second click during the first must then be decided case by case.
+**View changes are commands, whoever asks** (built 2026-11-22, cases 1 to 5 agreed with the maintainer; `BROWSER_TEST_SUITE=view-commands`). A sort order, the Untagged view, a date range and a file or link filter (`CommandPalette.setSortMode`, `setIsUntaggedView`, `setDateFilter`, `setFileFilter`) go through `CommandGate.asCommand`: called from inside a command they are part of it; called with the gate free they become one. Before, the command palette's entries and the × of the sort and Untagged chips ran them beside whatever else was running.
+
+1. The × of the sort chip or the Untagged chip, while background work has the turn: the change waits for it, then is made.
+2. A view entry chosen in the palette while background work has the turn: the same.
+3. A palette entry chosen while another command runs (an autosave, a search started by a timer): it waits for that command, then runs (`CommandGate.whenFree()` before the entry). The one place where a choice waits and is not dropped: it was typed and chosen on purpose.
+4. The × clicked twice quickly: the second click is dropped, and the server is asked once. The two × are commands at their click, as the date and file chips' × were.
+5. Everything else is as before: a click during a command is ignored.
+
+`asCommand` takes "a command is running" to mean "this was called by it". That holds because nothing else starts one meanwhile: input is dropped during a command, background work waits its turn, and the palette waits for the gate.
+
+Commands already, before this: the fold arrow, deleting a note, the right-click menus' view entries, the phone sheet, a tab click. Still outside the gate: palette entries other than the view's that do not take it themselves (not traced one by one), and suites that call internal functions directly, which is where most entries of `refreshesOutsideTurns()` come from.
 
 What a slow server now means: a command asked for while background work waits on the server waits with it, where before it ran beside it. On the same computer that is milliseconds.
 

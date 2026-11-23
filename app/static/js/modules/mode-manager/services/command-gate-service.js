@@ -3,7 +3,7 @@ import { ModeContextInstance as ModeContext } from '../mode-context.js';
 import * as Logger from '../mode-logger.js';
 import { CONFIG } from '../../config.js';
 import { recordCommand } from '../../problem-reports/input-recorder.js';
-import { isTurnTaken, takeTurn } from './turns.js';
+import { isTurnTaken, takeTurn, turnRunning } from './turns.js';
 
 const WATCHDOG_TIMEOUT_MS = 15000;
 
@@ -35,8 +35,11 @@ function armWatchdog(timeoutMs) {
             return;
         }
         const elapsedMs = moduleState.busyStartedAt === null ? null : performance.now() - moduleState.busyStartedAt;
+        // The turn whose work runs says whether the command is slow itself or waits behind
+        // something that never finished (turns.js).
         throw new Error(
             `CommandGate watchdog: command stuck busy name=${moduleState.busyName} elapsedMs=${elapsedMs}`
+            + ` turnRunning=${turnRunning()}`
         );
     }, timeoutMs);
 }
@@ -98,10 +101,32 @@ export const CommandGate = {
     // follows the press that entered edit mode): waits until no command runs,
     // instead of being dropped as run() drops a command while another runs.
     async runWhenFree(name, asyncFn, options) {
+        await this.whenFree();
+        return this.run(name, asyncFn, options);
+    },
+
+    // Resolves once no command runs. What the caller does next in the same task (starting a
+    // command, calling an operation that becomes one) finds the gate free.
+    async whenFree() {
         while (moduleState.busy || ModeContext.isLoading) {
             await new Promise((resolve) => setTimeout(resolve, FREE_POLL_MS));
         }
-        return this.run(name, asyncFn, options);
+    },
+
+    /**
+     * For an operation that must be a command whoever asks for it (a sort order, the Untagged
+     * view, a date range, a file filter: agreed 2026-11-22). Called from inside a command, it is
+     * part of that command and `asyncFn` runs at once; called with the gate free, it becomes a
+     * command itself. Before, the command palette's entries and two chips ran these beside
+     * whatever else was running. "A command is running" means "this was called by it" because
+     * nothing else starts one meanwhile: input is dropped during a command, background work
+     * waits its turn, and the palette waits for the gate before it runs an entry (whenFree).
+     */
+    asCommand(name, asyncFn) {
+        if (moduleState.busy) {
+            return asyncFn();
+        }
+        return this.run(name, asyncFn);
     },
 
     run(name, asyncFn, options) {

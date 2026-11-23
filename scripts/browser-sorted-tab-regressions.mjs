@@ -205,60 +205,41 @@ async function newNoteAtTopAllowedCase(page, sortCommand, label, created) {
 async function sortWhileViewInFlightCase(page, ids) {
   await waitIdle(page);
   assert.equal((await rootOrder(page))[0], ids[ids.length - 1], 'normal order: the newest root is first');
-  await page.evaluate(async () => {
+  // Since 2026-11-22 a sort order is a command and background work takes turns (turns.js): while
+  // the order is being saved, the infinite scroll and a link-title refresh skip their round, so
+  // no view can be asked for in the old order any more. The page holds the sort-mode POST and
+  // the case checks exactly that, then that the list opens in the new order.
+  const whileSaving = await page.evaluate(async () => {
     const {CommandPalette} = await import('/static/js/modules/command-palette/command-palette-controller.js');
-    const {ModeContextInstance: mode} = await import('/static/js/modules/mode-manager/mode-context.js');
-    const {actionRefreshAndMaybeSelect} = await import('/static/js/modules/mode-manager/actions/ui-actions.js');
+    const {CommandGate} = await import('/static/js/modules/mode-manager/services/command-gate-service.js');
     const pageFetch = window.fetch;
-    const release = {};
-    const held = {};
-    const gate = name => {
-      held[name] = new Promise(resolve => { release[name] = resolve; });
-      return held[name];
-    };
-    const sortRequestHeld = gate('sortRequest');
-    const viewAnswerHeld = gate('viewAnswer');
-    let sortRequestSeen = false;
-    let viewAnswerSeen = false;
+    let releaseSort = null;
+    const sortHeld = new Promise(resolve => { releaseSort = resolve; });
+    let isSortAsked = false;
+    let isSortSaved = false;
+    let viewsAsked = 0;
     window.fetch = async (input, init) => {
       const url = typeof input === 'string' ? input : input.url;
-      if (url.endsWith('/tab-state/sort-mode') && !sortRequestSeen) {
-        sortRequestSeen = true;
-        await sortRequestHeld;
-        return pageFetch(input, init);
-      }
-      if (url.endsWith('/notes/view') && sortRequestSeen && !viewAnswerSeen) {
-        viewAnswerSeen = true;
+      if (url.endsWith('/tab-state/sort-mode') && !isSortAsked) {
+        isSortAsked = true;
+        await sortHeld;
         const answer = await pageFetch(input, init);
-        await viewAnswerHeld;
+        isSortSaved = true;
         return answer;
       }
+      if (url.endsWith('/notes/view') && isSortAsked && !isSortSaved) viewsAsked += 1;
       return pageFetch(input, init);
     };
-    const until = async isDone => {
-      while (!isDone()) await new Promise(resolve => setTimeout(resolve, 10));
-    };
-    try {
-      const sorting = CommandPalette.setSortMode('alphabetical');
-      await until(() => sortRequestSeen);
-      const strayView = actionRefreshAndMaybeSelect({context: 'stray view request', animateNoteChanges: false});
-      await until(() => viewAnswerSeen);
-      release.sortRequest();
-      // hydrateTabState and the sort's refresh call run in one task, so once the
-      // mode is hydrated the refresh has been dropped or is waiting its turn.
-      await until(() => mode.activeTabSortMode === 'alphabetical');
-      // While it waits, the infinite-scroll poll records the roots on screen, still in
-      // the old order (infinite-scroll-service.js, handlePoll). Under load it ticked here
-      // and the sorted list opened at those roots, partway down (2026-10-27): record
-      // them as it would.
-      const onScreen = [...document.querySelectorAll('#notes-container > .note')].map(note => note.dataset.noteId);
-      mode.setVisibleRootRange(onScreen[0], onScreen[Math.min(onScreen.length - 1, 5)]);
-      release.viewAnswer();
-      await Promise.all([sorting, strayView]);
-    } finally {
-      window.fetch = pageFetch;
-    }
+    const sorting = CommandPalette.setSortMode('alphabetical');
+    while (!isSortAsked) await new Promise(resolve => setTimeout(resolve, 10));
+    // Longer than the infinite scroll's look and the scroll saver's: each has come round.
+    await new Promise(resolve => setTimeout(resolve, 1500));
+    const seen = {isTurnTaken: CommandGate.isTurnTaken(), viewsAsked};
+    releaseSort();
+    await sorting.finally(() => { window.fetch = pageFetch; });
+    return seen;
   });
+  assert.deepEqual(whileSaving, {isTurnTaken: true, viewsAsked: 0}, 'no view is asked for while the order is being saved');
   await waitIdle(page);
   const chip = await page.evaluate(() => ({
     shown: document.getElementById('root-sort-indicator').classList.contains('is-shown'),
@@ -303,7 +284,10 @@ async function sortWhileViewReachesServerLateCase(page, ids) {
       const strayView = actionRefreshAndMaybeSelect({context: 'stray view request', animateNoteChanges: false});
       await until(() => straySeen);
       const sorting = CommandPalette.setSortMode('alphabetical');
-      await until(() => sortSaved);
+      // The sort order waits for the view request in flight (turns.js, since 2026-11-22): it
+      // is not saved beside it, so that request is never answered in the new order.
+      await new Promise(resolve => setTimeout(resolve, 200));
+      if (sortSaved) throw new Error('the sort order was saved beside a view request in flight');
       releaseStray();
       await Promise.all([sorting, strayView]);
     } finally {

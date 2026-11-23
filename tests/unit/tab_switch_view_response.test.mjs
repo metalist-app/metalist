@@ -165,5 +165,11 @@ test('a refresh that waited behind a tab switch asks for the tab shown now', asy
     heldFetch.resolve();
     await Promise.all([first, pendingSwitch, waiting]);
 
-    assert.deepEqual(events.filter(event => event.startsWith('fetch:')), ['fetch:A', 'fetch:B', 'fetch:B']);
+    // Whichever of the two waiting went first (their timers decide), every view asked for was
+    // shown in the tab it was asked for: none came back to another tab.
+    const tabsAsked = events.filter(event => event.startsWith('fetch:')).map(event => event.slice('fetch:'.length));
+    const tabsShownIn = events.filter(event => event.startsWith('apply:')).map(event => event.slice('apply:'.length));
+    assert.equal(tabsAsked.length, 3);
+    assert.deepEqual(tabsShownIn, tabsAsked);
+    assert.equal(tabsAsked[tabsAsked.length - 1], 'B', 'the last view is of the tab shown');
 });
