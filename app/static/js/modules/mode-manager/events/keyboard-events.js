@@ -65,7 +65,7 @@ import { checkBackgroundWork } from '../services/background-work-cards.js';
 import { isCopyOfDialogSelection } from '../services/dialog-copy-service.js';
 import {
     persistTabStateSnapshot, moveTabOnServer, createTabOnServer, deleteTabOnServer, chooseFolderOnServer, setTreeShownOnServer,
-    reloadTabStateFromServer,
+    reloadTabStateOnceViewRequestsLand,
 } from '../services/tab-state-service.js';
 import { getActiveDateFilter } from '../services/date-range-filter-service.js';
 import { showSearchLock } from '../services/edit-lock-service.js';
@@ -3789,6 +3789,7 @@ export function updateSearchContextsList() {
                 }
                 const sourceTabId = e.currentTarget.getAttribute('data-source-tab-id');
 	                void CommandGate.run('tab.duplicate', async () => {
+	                    if (wasContextDeletedBeforeItsTurn(sourceTabId)) return;
 	                    await duplicateTabContext(sourceTabId, true, true, CONFIG.TABS.CREATE_AND_SWITCH, false);
 	                });
 	            });
@@ -3804,6 +3805,7 @@ export function updateSearchContextsList() {
                 }
                 const deleteTabId = e.currentTarget.getAttribute('data-delete-tab-id');
 	                void CommandGate.run('tab.delete', async () => {
+	                    if (wasContextDeletedBeforeItsTurn(deleteTabId)) return;
 	                    // Its reference pages first: left behind, another context would adopt them.
 	                    for (const pageTabId of getReferencePageTabsForContext(deleteTabId)) {
 	                        await deleteTabContext(pageTabId);
@@ -3829,11 +3831,21 @@ async function settleViewRequestsBeforeTabChange() {
     await waitForViewRequestIdle();
 }
 
-// For a tab change that asks the server first: no view request starts while it does
-// (holdViewRequestsWhile, ui-actions.js).
-async function changeTabsWithNoViewRequest(changeTabs) {
-    const { holdViewRequestsWhile } = await import('../actions/ui-actions.js');
-    await holdViewRequestsWhile(changeTabs);
+// A command on a search context waits its turn (turns.js). Another view may have deleted the
+// context meanwhile, and this view taken that while the command waited: the click was on a
+// context that is no longer there, and does nothing, as the server answers a request about a
+// context deleted a moment ago (tab_state.py, _is_deleted_meanwhile_locked).
+function wasContextDeletedBeforeItsTurn(tabId) {
+    if (typeof tabId !== 'string' || tabId === '') throw new Error('A search context command needs its context');
+    return !Object.hasOwn(ModeContext.tabs, tabId);
+}
+
+// The tabs as the server has them, taken (the tab shown may change) with no view request in
+// flight: one started while the server was asked lands in its own tab first
+// (reloadTabStateOnceViewRequestsLand, tab-state-service.js).
+async function reloadTabsWithNoViewRequestInFlight() {
+    const { letViewRequestLand } = await import('../actions/ui-actions.js');
+    await reloadTabStateOnceViewRequestsLand(letViewRequestLand);
 }
 
 export async function switchToTabContext(tabId, options) {
@@ -4681,10 +4693,8 @@ export async function adoptClosedReferencePages() {
     // Where each tab was left reaches the server first (it takes a save still naming the closed
     // pages): scroll is saved about once a second, and the search would come back at the top.
     snapshotActiveTabScrollState();
-    await changeTabsWithNoViewRequest(async () => {
-        await persistTabStateSnapshot();
-        await reloadTabStateFromServer();
-    });
+    await persistTabStateSnapshot();
+    await reloadTabsWithNoViewRequestInFlight();
     const isShowingAnotherTab = ModeContext.activeTabId !== shownBefore;
     // Read before the notes change: emptying the page lets the window fall to the top, and the
     // scroll watcher would take that for where the search was left.
@@ -4752,10 +4762,8 @@ export async function adoptSharedSearchContexts() {
     // Where this view was left reaches the server first; the server keeps any search another
     // view changed (tab_state.py, update).
     snapshotActiveTabScrollState();
-    await changeTabsWithNoViewRequest(async () => {
-        await persistTabStateSnapshot();
-        await reloadTabStateFromServer();
-    });
+    await persistTabStateSnapshot();
+    await reloadTabsWithNoViewRequestInFlight();
     updateSearchContextsList();
     const isShowingAnotherTab = ModeContext.activeTabId !== shownBefore;
     // A search typed while this fetched stands (interaction principle 2: only the user's action
@@ -4811,9 +4819,7 @@ export async function adoptSharedSearchContexts() {
 // After Rename tag renamed a tag in search contexts' searches (rename_tag.py): the tabs, the search box
 // and the list of search contexts show the new name, and the view runs the renamed search.
 export async function adoptRenamedSearches() {
-    await changeTabsWithNoViewRequest(async () => {
-        await reloadTabStateFromServer();
-    });
+    await reloadTabsWithNoViewRequestInFlight();
     ModeContext.clearActiveTabDiffCacheForSearchExecution(ModeContext.searchQuery, { forceClear: true });
     syncSearchInputField();
     updateSearchContextsList();

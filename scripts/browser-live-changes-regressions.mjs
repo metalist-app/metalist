@@ -13,6 +13,8 @@ import {clickAndSelectAll} from './browser-select-field.mjs';
 const REQUESTS_QUIET_MS = 300;
 // A change shows within the 2-second status check, plus its refresh.
 const SHOWS_WITHIN_MS = 6000;
+// Long enough for a change made in the page to have been sent to the server.
+const ACT_SENT_MS = 400;
 // Long enough for a waiting change to have shown, had it not waited.
 const WAITS_AT_LEAST_MS = 5000;
 const SETTLE_MS = 800;
@@ -451,8 +453,12 @@ async function actWhileAReadingIsAnswered(here, there, otherSearch, act) {
   await holdContextsAnswer(here);
   await typeSearchThere(there, otherSearch);
   await here.waitForFunction(() => window.__heldAnswer.fetched, {timeout: SHOWS_WITHIN_MS});
-  await act();
+  // The change is sent while the answer is held; what it shows waits its turn behind the reading
+  // (turns.js), so it is finished only once the answer is let go.
+  const acting = act();
+  await pause(ACT_SENT_MS);
   await releaseContextsAnswer(here);
+  await acting;
 }
 
 // A change made here while this view reads its contexts again stands, and what the other view

@@ -131,7 +131,7 @@ export function noticeStatusRevisions(status) {
 // Why a change must wait, or '' when it can be applied now.
 function reasonToWait() {
     if (document.hidden) return 'hidden';
-    if (CommandGate.isBusy()) return 'command';
+    if (CommandGate.isTurnTaken()) return 'command';
     if (ModeContext.modalStack.length > 0) return 'dialog';
     if (isContextMenuOpen()) return 'menu';
     if (isFindBarOpen()) return 'find';
@@ -168,7 +168,8 @@ function applyWhenFree() {
         return;
     }
     moduleState.isApplying = true;
-    applyChanges()
+    // In a turn: a command asked for meanwhile runs after the change is shown (turns.js).
+    CommandGate.runBackground('liveChanges.apply', applyChanges)
         .catch((error) => {
             rethrowUnexpectedError(error);
             ErrorHandler.handleApiError(error, null);

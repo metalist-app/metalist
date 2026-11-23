@@ -3,6 +3,7 @@ import { ModeContextInstance as ModeContext } from '../mode-context.js';
 import * as Logger from '../mode-logger.js';
 import { CONFIG } from '../../config.js';
 import { recordCommand } from '../../problem-reports/input-recorder.js';
+import { isTurnTaken, takeTurn } from './turns.js';
 
 const WATCHDOG_TIMEOUT_MS = 15000;
 
@@ -11,6 +12,8 @@ const moduleState = ApplicationState.createFields('command-gate-service', {
     busyName: null,
     busyStartedAt: null,
     watchdogId: null,
+    // What asked for a list refresh outside any turn, each once (refreshesOutsideTurns).
+    refreshesOutsideTurns: [],
 });
 
 
@@ -41,8 +44,54 @@ function armWatchdog(timeoutMs) {
 const FREE_POLL_MS = 50;
 
 export const CommandGate = {
+    // A command is running, or waiting for background work to finish.
     isBusy() {
         return moduleState.busy;
+    },
+
+    // A command or background work is running or waiting its turn (turns.js). Background work
+    // that may be skipped (a poll) asks this and skips its round.
+    isTurnTaken() {
+        return isTurnTaken();
+    },
+
+    /**
+     * Background work that changes the notes or the tabs shown (the infinite scroll, a change
+     * made in another view): it takes a turn, so a command asked for meanwhile runs after it,
+     * not beside it. No loading state: the page stays usable. The caller asks isTurnTaken()
+     * first, in the same task, and skips its round when one is: calling this then is a defect.
+     */
+    runBackground(name, asyncFn) {
+        if (isTurnTaken()) {
+            throw new Error(`CommandGate.runBackground called while a turn is taken (name=${name})`);
+        }
+        return takeTurn(name, asyncFn);
+    },
+
+    /**
+     * A list refresh asked for with no turn taken takes one of its own (ui-actions.js), so it is
+     * safe; it is also noted here by what asked, each asker once. Many controls still do their
+     * work outside the gate (a sort order, a filter, folding a note): the list says which, for
+     * the day they become commands (docs/future-plans/one-writer-refactoring.md, idea 4).
+     */
+    noteRefreshOutsideTurns(context) {
+        if (typeof context !== 'string' || context === '') throw new Error('noteRefreshOutsideTurns requires what asked');
+        if (!moduleState.refreshesOutsideTurns.includes(context)) {
+            moduleState.refreshesOutsideTurns = [...moduleState.refreshesOutsideTurns, context];
+        }
+    },
+
+    refreshesOutsideTurns() {
+        return [...moduleState.refreshesOutsideTurns];
+    },
+
+    /**
+     * Background work that must not be skipped (the server closed a reference page; a refresh
+     * asked for outside any turn): it runs when its turn comes, after whatever runs now.
+     * asyncFn must not be awaited from inside a turn: it would wait for the turn awaiting it.
+     */
+    queueBackground(name, asyncFn) {
+        return takeTurn(name, asyncFn);
     },
 
     // For work that finishes in the background (an AI answer, a click that
@@ -107,8 +156,10 @@ export const CommandGate = {
         const startedAt = performance.now();
         // Failed unless the command finishes: the outcome is recorded without catching anything.
         let outcome = 'failed';
-        return Promise.resolve()
-            .then(() => asyncFn())
+        // The command's work starts once background work in progress has finished (turns.js);
+        // the gate is busy from now, so input meanwhile is dropped as during the command.
+        // With no turn taken the work still starts after the caller's own task, as before turns.
+        return takeTurn(name, () => Promise.resolve().then(asyncFn))
             .then((value) => {
                 outcome = 'ok';
                 return value;

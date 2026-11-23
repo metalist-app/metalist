@@ -1,3 +1,4 @@
+import { freeGate } from './gate_stand_ins.mjs';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
@@ -53,7 +54,7 @@ function chatHarness(events) {
     const bulk = bulkHarness();
     const dependencies = {
         ApplicationState, stateValuesEqual,
-        CommandGate: {isBusy: () => false},
+        CommandGate: freeGate(),
         ModeContext: {isEditing: false},
         window: {
             setInterval: () => { const id = ++nextTimer; timers.add(id); return id; },
@@ -218,7 +219,7 @@ test('overlapping connectivity checks clear user activity once', async () => {
     const dependencies = {
         ApplicationState, ModeContext, fetch,
         CONFIG: { API: { AUTH: { SESSIONS: '/sessions', STATUS: '/status' } } },
-        CommandGate: { isBusy: () => false },
+        CommandGate: freeGate(),
         Logger: { logDebug() {}, logError() {} },
         ErrorHandler: { handleConnectionRestored() {}, handleApiError() {} },
         buildSessionHeaders: () => ({}),

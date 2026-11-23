@@ -1,3 +1,4 @@
+import { freeGate } from './gate_stand_ins.mjs';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
@@ -49,7 +50,7 @@ async function harness() {
     const dependencies = {
         ApplicationState, ModeContext: context, window, document: { hidden: false },
         CONFIG: { API: { NOTES: { TAB_STATE: '/tabs', TAB_STATE_SEARCH: '/tabs/search', TAB_STATE_SHOWN: '/tabs/shown', TAB_STATE_MOVE: '/tabs/move', TAB_STATE_SCROLL: '/tabs/scroll', TAB_STATE_REFERENCE_PAGE: '/tabs/reference-page', TAB_STATE_UNTAGGED_VIEW: '/tabs/untagged' }, VIRTUAL_FOLDERS: { FOLDER_CONTEXT: '/folder-context', TREE_SHOWN: '/tree-shown' } } },
-        CommandGate: { isBusy: () => false }, buildSessionHeaders: () => ({}),
+        CommandGate: freeGate(), buildSessionHeaders: () => ({}),
         computeScrollAnchor: () => null, areScrollAnchorsEqual: (a, b) => a === b,
         restoreReferenceNavigation: (state) => restoredReferenceTabs.push(state.tabs),
         getReferenceViewsPayload: () => structuredClone(referencePages),
@@ -81,7 +82,7 @@ async function harness() {
         },
     };
     const service = new Function(...Object.keys(dependencies), `${source}
-        return { initializeTabStateService, persistTabStateSnapshot, moveTabOnServer, reloadTabStateFromServer, setTabUntaggedViewOnServer };`)(...Object.values(dependencies));
+        return { initializeTabStateService, persistTabStateSnapshot, moveTabOnServer, reloadTabStateFromServer, reloadTabStateOnceViewRequestsLand, setTabUntaggedViewOnServer };`)(...Object.values(dependencies));
     await service.initializeTabStateService();
     assert.equal(polls.length, 1);
     // Reference views are restored from the freshly loaded server tab state.
@@ -304,6 +305,32 @@ test('a reading with nothing changed meanwhile is taken as it is', async () => {
     h.reads[0].answer(VERSION_BEFORE);
     await reading;
     assert.equal(h.reads.length, 1);
+    assert.deepEqual(h.taken.map(state => state.version), [VERSION_BEFORE]);
+});
+
+// A reading that may change the tab shown is taken with no view request in flight: the request
+// lands in its own tab first, and the tabs are read again.
+test('a reading answered while a view request is in flight waits for it, then is asked again', async () => {
+    const h = await harness();
+    h.holdReads();
+    let isInFlight = true;
+    let landed;
+    const whenLanded = new Promise((resolve) => { landed = resolve; });
+    const reading = h.service.reloadTabStateOnceViewRequestsLand(async () => {
+        if (!isInFlight) return false;
+        await whenLanded;
+        return true;
+    });
+    await settle();
+    h.reads[0].answer(VERSION_BEFORE);
+    await settle();
+    assert.deepEqual(h.taken, [], 'nothing is taken while the view request is in flight');
+    isInFlight = false;
+    landed();
+    await settle();
+    assert.equal(h.reads.length, 2, 'the tabs are asked for again');
+    h.reads[1].answer(VERSION_BEFORE);
+    await reading;
     assert.deepEqual(h.taken.map(state => state.version), [VERSION_BEFORE]);
 });
 

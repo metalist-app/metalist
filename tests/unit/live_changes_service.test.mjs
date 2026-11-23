@@ -1,5 +1,6 @@
 // Changes made in another view (multi-view editing step 3): the status revisions decide what this
 // view takes again, and a change waits while the user is busy (live-changes-service.js).
+import { freeGate } from './gate_stand_ins.mjs';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
@@ -27,7 +28,7 @@ function harness() {
         ErrorHandler: { handleApiError(error) { throw error; } },
         rethrowUnexpectedError(error) { throw error; },
         ModeContext: { get modalStack() { return busy.dialogs; }, isEditing: false },
-        CommandGate: { isBusy: () => false },
+        CommandGate: freeGate(),
         isContextMenuOpen: () => false,
         isFindBarOpen: () => false,
         isMovingNoteByDrag: () => false,

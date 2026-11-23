@@ -1,3 +1,4 @@
+import { freeGate } from './gate_stand_ins.mjs';
 import { ApplicationState } from '../../app/static/js/modules/application-state.js';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -14,7 +15,7 @@ test('completed titles defer during editing and request a guaranteed refresh aft
     const refreshes = [];
     const mode = { isEditing: true };
     const dependencies = {
-        ModeContext: mode, CommandGate: { isBusy: () => false },
+        ModeContext: mode, CommandGate: freeGate(),
         window: {
             setTimeout(fn) { scheduled.set(++timerId, fn); return timerId; },
             clearTimeout(id) { scheduled.delete(id); },

@@ -1,3 +1,4 @@
+import { gateWithTheTurn } from './gate_stand_ins.mjs';
 import { ApplicationState } from '../../app/static/js/modules/application-state.js';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -44,6 +45,7 @@ function refreshHarness({ isRemoved, isAnimated, isFullSnapshot }) {
         setCurrentNoteId(value) { this.currentNoteId = value; },
     };
     const dependencies = {
+        CommandGate: gateWithTheTurn(),
         ModeContext,
         setSearchHighlightPhrases() {},
         // No reference pages closed with their notes in these views.

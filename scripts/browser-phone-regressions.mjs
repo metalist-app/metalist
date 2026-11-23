@@ -193,6 +193,30 @@ async function backCase(page) {
   await waitQuiet(page);
 }
 
+// The sort order chosen in the sheet is the one shown, and its command has ended. When it never
+// comes, the failure says what the page was doing: this wait timed out once in a whole-suite run
+// (2026-11-22, turns just built) and passed in every run alone, so the next time must explain itself.
+async function waitForSortMode(page, sortMode) {
+  const reached = () => page.waitForFunction(async wanted => {
+    const {ModeContextInstance: state} = await import('/static/js/modules/mode-manager/mode-context.js');
+    return state.activeTabSortMode === wanted && !state.isLoading;
+  }, {}, sortMode);
+  await reached().catch(async error => {
+    const doing = await page.evaluate(async () => {
+      const {ModeContextInstance: state} = await import('/static/js/modules/mode-manager/mode-context.js');
+      const {CommandGate} = await import('/static/js/modules/mode-manager/services/command-gate-service.js');
+      const turns = await import('/static/js/modules/mode-manager/services/turns.js');
+      const sheet = document.getElementById('phone-sheet');
+      return {
+        sortMode: state.activeTabSortMode, isLoading: state.isLoading, isEditing: state.isEditing,
+        modals: [...state.modalStack], commandBusy: CommandGate.isBusy(), turnTaken: turns.isTurnTaken(),
+        turnRunning: turns.turnRunning(), sheetShown: sheet !== null && !sheet.hidden,
+      };
+    });
+    throw new Error(`the sort order never became ${sortMode}: ${JSON.stringify(doing)}`, {cause: error});
+  });
+}
+
 async function sheetCase(page) {
   await page.tap('#phone-menu-button');
   await page.waitForSelector('#phone-sheet', {visible: true});
@@ -201,19 +225,13 @@ async function sheetCase(page) {
     assert(labels.some(text => text.startsWith(label)), `the sheet must offer ${label}`);
   }
   await page.tap('#phone-sheet [data-phone-choice="sort:created"]');
-  await page.waitForFunction(async () => {
-    const {ModeContextInstance: state} = await import('/static/js/modules/mode-manager/mode-context.js');
-    return state.activeTabSortMode === 'created' && !state.isLoading;
-  });
+  await waitForSortMode(page, 'created');
   await waitQuiet(page);
   assert.equal((await box(page, '#phone-sheet')).shown, false, 'picking an option closes the sheet');
   await page.tap('#phone-menu-button');
   await page.waitForSelector('#phone-sheet', {visible: true});
   await page.tap('#phone-sheet [data-phone-choice="sort:normal"]');
-  await page.waitForFunction(async () => {
-    const {ModeContextInstance: state} = await import('/static/js/modules/mode-manager/mode-context.js');
-    return state.activeTabSortMode === 'normal' && !state.isLoading;
-  });
+  await waitForSortMode(page, 'normal');
   await waitQuiet(page);
   await fileSizeRowCase(page);
 }

@@ -63,6 +63,7 @@ async function isAppIdle(quiet) {
   const busyWith = [];
   if (mode.isLoading) busyWith.push('a view is loading');
   if (CommandGate.isBusy()) busyWith.push('a command is running');
+  else if (CommandGate.isTurnTaken()) busyWith.push('background work has the turn');
   if (isDebouncedSearchPending()) busyWith.push('a typed search waits to run');
   if (isDictationCleanupInProgress()) busyWith.push('a dictation paste is being cleaned up');
   if (quiet === null) return busyWith.length === 0;
@@ -162,7 +163,7 @@ export async function waitForPageSettled(page) {
       const observe = () => {
         const busyReasons = [
           mode.isLoading,
-          CommandGate.isBusy(),
+          CommandGate.isBusy() || CommandGate.isTurnTaken(),
           document.querySelector('[data-mermaid-state="rendering"]') !== null,
           [...document.images].some(image => inView(image) && !image.complete),
         ];

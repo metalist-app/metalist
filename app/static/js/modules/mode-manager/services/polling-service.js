@@ -263,10 +263,12 @@ function scheduleLinkTitleRefresh() {
 }
 
 async function refreshForLinkTitleChanges() {
-    if (CommandGate.isBusy() || ModeContext.isEditing) {
+    if (CommandGate.isTurnTaken() || ModeContext.isEditing) {
         scheduleLinkTitleRefresh();
         return;
     }
-    const { actionRefreshAndMaybeSelect } = await import('../actions/ui-actions.js');
-    await actionRefreshAndMaybeSelect({ context: 'link-title-refresh' });
+    await CommandGate.runBackground('linkTitles.refresh', async () => {
+        const { actionRefreshAndMaybeSelect } = await import('../actions/ui-actions.js');
+        await actionRefreshAndMaybeSelect({ context: 'link-title-refresh' });
+    });
 }

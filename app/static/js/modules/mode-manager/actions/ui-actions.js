@@ -111,7 +111,10 @@ function noticeClosedReferencePages(snapshot) {
         return;
     }
     // After this view is applied: taking the tabs waits for view requests in flight.
-    void import('../events/keyboard-events.js').then((keyboardEvents) => keyboardEvents.adoptClosedReferencePages());
+    // In a turn of its own, which is never skipped: the tabs must follow the server.
+    void import('../events/keyboard-events.js').then((keyboardEvents) => CommandGate.queueBackground(
+        'referencePages.closedByServer', () => keyboardEvents.adoptClosedReferencePages(),
+    ));
 }
 
 
@@ -164,22 +167,11 @@ export async function waitForViewRequestIdle() {
     }
 }
 
-/**
- * Runs `changeTabs`, which asks the server before it changes the active tab, with no notes.view
- * request under way or started meanwhile: one in flight lands first, and one asked for during it
- * waits its turn, as behind another view request. Waiting first and then asking the server left a
- * gap: a request started in it (the infinite scroll, a poll) came back to another tab, and its
- * response had nowhere to go (GitHub's reference-views run in Firefox, 2026-11-22).
- */
-export async function holdViewRequestsWhile(changeTabs) {
-    if (typeof changeTabs !== 'function') throw new Error('holdViewRequestsWhile requires what changes the tabs');
-    while (moduleState.viewRequestInFlight) {
-        await waitForViewRequestIdle();
-    }
-    moduleState.viewRequestInFlight = true;
-    return changeTabs().finally(() => {
-        moduleState.viewRequestInFlight = false;
-    });
+// Lets a view request in flight land (its response applied); true when there was one to wait for.
+export async function letViewRequestLand() {
+    if (!moduleState.viewRequestInFlight) return false;
+    await waitForViewRequestIdle();
+    return true;
 }
 
 // Whether a view request is on its way. Only the infinite-scroll poll asks: it repeats every
@@ -191,6 +183,14 @@ export function isViewRequestInFlight() {
 export async function actionRefreshAndMaybeSelect(options) {
     if (options === null || typeof options !== 'object') {
         throw new Error('actionRefreshAndMaybeSelect requires options object');
+    }
+    // Every list refresh runs in a turn (turns.js): asked for in none, it takes one, and so never
+    // runs beside a command or other background work that started meanwhile.
+    if (!CommandGate.isTurnTaken()) {
+        let asker = 'refresh';
+        if (typeof options.context === 'string' && options.context !== '') asker = options.context;
+        CommandGate.noteRefreshOutsideTurns(asker);
+        return CommandGate.queueBackground(`refresh.${asker}`, () => actionRefreshAndMaybeSelect(options));
     }
     Logger.logAction('refresh_and_maybe_select', { 
         noteId: ModeContext.currentNoteId,

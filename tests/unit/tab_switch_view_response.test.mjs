@@ -1,3 +1,4 @@
+import { gateWithTheTurn } from './gate_stand_ins.mjs';
 import { ApplicationState } from '../../app/static/js/modules/application-state.js';
 import { MS_PER_SECOND } from '../../app/static/js/modules/time-units.js';
 import assert from 'node:assert/strict';
@@ -52,6 +53,8 @@ function buildHarness() {
     };
     const uiDependencies = {
         MS_PER_SECOND,
+        // These tests set a refresh against a tab switch themselves, as before every refresh took a turn.
+        CommandGate: gateWithTheTurn(),
         setSearchHighlightPhrases() {},
         // No reference pages closed with their notes in these views.
         noticeClosedReferencePages() {},
@@ -94,7 +97,6 @@ function buildHarness() {
     const uiFunctionNames = ['actionRefreshAndMaybeSelect'];
     if (/function resolveVisibleRootRange\(/.test(uiSource)) uiFunctionNames.push('resolveVisibleRootRange');
     if (/function waitForViewRequestIdle\(/.test(uiSource)) uiFunctionNames.push('waitForViewRequestIdle');
-    uiFunctionNames.push('holdViewRequestsWhile');
     const uiActions = new Function(
         ...Object.keys(uiDependencies),
         `${uiNamedConstants}\n${uiFunctionNames.map((name) => extractFunction(uiSource, name)).join('\n')}\nreturn { ${uiFunctionNames.join(', ')} };`,
@@ -148,26 +150,20 @@ test('tab switch positions the restored DOM before waiting on any refresh', asyn
     assert.ok(events.indexOf('scroll-now:B') < events.indexOf('fetch:B'), events.join(' '));
 });
 
-// A tab change that asks the server before it switches (a reference page closed with its notes, a
-// search context changed elsewhere): a view request asked for meanwhile waits, and is made for the
-// tab shown after. It went out for the old tab and came back to another: "notes.view response for
-// tab A arrived after the active tab changed to B" (GitHub, Firefox, 2026-11-22).
-test('a view request asked for while the tabs are read from the server waits for the tab change', async () => {
-    const { events, heldFetch, uiActions } = buildHarness();
-    heldFetch.resolve();
-    const serverAnswer = deferred();
+// A refresh that waits its turn behind a tab change is for the tab shown once its turn comes. It
+// read its tab when asked, so it went out for the old one and came back to another: "notes.view
+// response for tab A arrived after the active tab changed to B" (GitHub, Firefox, 2026-11-22).
+test('a refresh that waited behind a tab switch asks for the tab shown now', async () => {
+    const { events, heldFetch, uiActions, switchToTabContext } = buildHarness();
 
-    const pendingChange = uiActions.holdViewRequestsWhile(async () => {
-        await serverAnswer.promise;
-        events.push('switch:B');
-        uiActions.ModeContext.activeTabId = 'B';
-    });
+    const first = uiActions.actionRefreshAndMaybeSelect({ context: 'infinite-scroll' });
+    const pendingSwitch = switchToTabContext('B', {});
+    // The switch is waiting first, so it goes first.
     await new Promise((resolve) => setTimeout(resolve, 0));
-    const pendingRefresh = uiActions.actionRefreshAndMaybeSelect({ context: 'infinite-scroll' });
+    const waiting = uiActions.actionRefreshAndMaybeSelect({ context: 'poll' });
     await new Promise((resolve) => setTimeout(resolve, 50));
-    assert.deepEqual(events, [], 'nothing is fetched while the tabs are read');
-    serverAnswer.resolve();
-    await Promise.all([pendingChange, pendingRefresh]);
+    heldFetch.resolve();
+    await Promise.all([first, pendingSwitch, waiting]);
 
-    assert.deepEqual(events.slice(0, 3), ['switch:B', 'fetch:B', 'apply:B']);
+    assert.deepEqual(events.filter(event => event.startsWith('fetch:')), ['fetch:A', 'fetch:B', 'fetch:B']);
 });

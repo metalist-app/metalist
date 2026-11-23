@@ -313,7 +313,31 @@ function recordServerAnswer(state) {
 // The server changed searches itself (Rename tag renamed a tag in them, rename_tag.py): the tabs take
 // its state, and later snapshots are read at its version.
 export async function reloadTabStateFromServer() {
-    const serverState = await fetchTabStateNotOvertaken();
+    return takeTabState(await fetchTabStateNotOvertaken());
+}
+
+/**
+ * As reloadTabStateFromServer, for a reading that may change the tab shown: it is taken only with
+ * no notes.view request in flight. The server records each view response as its tab's warm view,
+ * so one must land in the tab it was asked for; a request started while the tabs were read (the
+ * infinite scroll, a poll) came back after the tab changed and had nowhere to go (GitHub's
+ * reference-views run in Firefox, 2026-11-22). The request lands first, then the tabs are read
+ * again, since that reading may be old by then. Nothing waits on the reading meanwhile: holding
+ * view requests back instead made a refresh wait on the server past its limit.
+ */
+export async function reloadTabStateOnceViewRequestsLand(letViewRequestLand) {
+    if (typeof letViewRequestLand !== 'function') {
+        throw new Error('reloadTabStateOnceViewRequestsLand requires how to let a view request land');
+    }
+    let serverState = await fetchTabStateNotOvertaken();
+    // letViewRequestLand() answers true when it had one to wait for (ui-actions.js).
+    while (await letViewRequestLand()) {
+        serverState = await fetchTabStateNotOvertaken();
+    }
+    return takeTabState(serverState);
+}
+
+function takeTabState(serverState) {
     // The view keeps its place when the tab shown stays; a page the server closed (its notes
     // deleted) gives way to its search, which brings its own.
     const keepsActiveTab = serverState.activeTabId === ModeContext.activeTabId;
@@ -616,7 +640,7 @@ async function pollPersistScroll() {
     if (document.hidden) {
         return;
     }
-    if (CommandGate.isBusy()) {
+    if (CommandGate.isTurnTaken()) {
         return;
     }
     if (ModeContext.shouldIgnoreScrollEvents()) {
@@ -629,7 +653,7 @@ async function pollPersistScroll() {
     // The session can end while a save is in flight (it expired, a backup
     // restore or a password change ended it): the login screen already shows,
     // and the last moment's scroll is not saved. Every other failure surfaces.
-    await persistCurrentScroll().catch((error) => { // shockharness: ignore[EXC002] reason="a session that ended is shown as the login screen; the last moment's scroll is dropped on purpose"
+    await CommandGate.runBackground('scroll.save', persistCurrentScroll).catch((error) => { // shockharness: ignore[EXC002] reason="a session that ended is shown as the login screen; the last moment's scroll is dropped on purpose"
         if (!(error instanceof AuthenticationRequiredError)) {
             throw error;
         }

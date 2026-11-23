@@ -1,3 +1,4 @@
+import { freeGate } from './gate_stand_ins.mjs';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {readFile} from 'node:fs/promises';
@@ -36,7 +37,7 @@ function harness() {
         window, document: {getElementById: () => new Element()}, HTMLElement: Element,
         crypto: {randomUUID: () => String(++sequence)},
         NotesAPI: {getFloatingNote: (noteId, revision) => new Promise((resolve, reject) => requests.push({noteId, revision, resolve, reject}))},
-        CommandGate: {isBusy: () => false},
+        CommandGate: freeGate(),
         rethrowUnexpectedError: error => { throw error; },
         createFloatingNoteElements() {
             const entry = Object.fromEntries(['element', 'tree', 'title', 'status', 'scroll'].map(key => [key, new Element()]));

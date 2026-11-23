@@ -185,9 +185,10 @@ async function refreshWindow(id) {
 export async function refreshFloatingNotes() {
     // Hidden tabs skip refreshes; the next visible tick catches up.
     if (document.hidden) return;
-    if (moduleState.refreshing || CommandGate.isBusy() || moduleState.order.length === 0) return;
+    if (moduleState.refreshing || CommandGate.isTurnTaken() || moduleState.order.length === 0) return;
     moduleState.refreshing = true;
-    await Promise.all([...moduleState.order].map(refreshWindow)).finally(() => {
+    // In a turn: a command (a drag in a window, a note edited there) runs after the windows are drawn.
+    await CommandGate.runBackground('floatingNotes.refresh', () => Promise.all([...moduleState.order].map(refreshWindow))).finally(() => {
         moduleState.refreshing = false;
     });
 }
