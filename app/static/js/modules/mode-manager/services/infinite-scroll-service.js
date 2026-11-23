@@ -134,7 +134,8 @@ function collectRootVisibility() {
 
 async function handlePoll() {
     if (document.hidden) return;
-    if (CommandGate.isBusy()) return;
+    // A command or other background work has the turn: this round is skipped (turns.js).
+    if (CommandGate.isTurnTaken()) return;
     if (ModeContext.isLoading) return;
 
     // An open last quote runs closed (search-syntax-service.js closedText).
@@ -168,7 +169,7 @@ async function handlePoll() {
     const needsRootsAbove = ModeContext.isAnchorNearStart(visible[0], distance)
         && ModeContext.hasRootsAboveWindow();
     if (needsRootsBelow || needsRootsAbove) {
-        await maybeMoveBand(state, { needsRootsAbove, needsRootsBelow });
+        await CommandGate.runBackground('infiniteScroll.moveBand', () => maybeMoveBand(state, { needsRootsAbove, needsRootsBelow }));
     }
 }
 

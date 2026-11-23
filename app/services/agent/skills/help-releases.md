@@ -5,6 +5,23 @@ What changed in each MetaList version, newest first, from its changelog
 Compare with installed_version from the help lookup to tell the user whether
 they already have a release. Version info offers updates (see the data topic).
 
+## 0.35.0
+
+- **Notes are edited inside a floating window.** Click a note's text in a floating window to edit it there, with the whole editor: the tag bar, `[[` links, formatting, suggestions and the keys for adding, moving and indenting notes. `Escape` leaves the note; a second `Escape` closes the window. The list behind shows a pencil on the note being edited.
+- A floating window draws its notes as the list does: folded as saved, with fold arrows that fold the note everywhere, and a gallery as its grid.
+- **Notes drag inside a floating window**, as in the list: up or down among the notes beside them, right to go under the note above, left to come out one level. Nothing drags out of the window, and a drag near its top or bottom edge scrolls it.
+- Right-clicking a note in a floating window edits it there and opens the note menu.
+- The window's own note takes no sibling and cannot be deleted from inside the window: either would put the result outside it.
+- The window's title is no longer a link to a reference view: the whole bar drags the window.
+- **A copied note with a diagram gets its own diagram.** Pasting a note that holds an Excalidraw drawing makes a new, identical drawing for the pasted note, so editing one no longer changes the other.
+- The password count behind the Password Audit reminder is much faster in large vaults, which could slow expanding a note right after starting.
+- Fixed: the Password Audit failed with an error when a password was longer than 72 characters.
+- Fixed: a style put on part of a line (a highlight, a colour) stopped where bold text ended when it started inside the bold text.
+- **One thing at a time changes the list.** What MetaList does in the background (loading more notes as you scroll, showing a change made in another window, saving where you scrolled to) and what you ask for now take turns. Before, they could overlap, and a rare error showed when you changed search context while the list was still loading ("response arrived after the active tab changed").
+- Changing the sort order, the Untagged view, a date range or a file filter from the command palette, or by the × on its chip, waits for background work to finish first, and a second quick click on the × is ignored.
+- A choice made in the command palette while something else is still running is carried out when that has finished.
+- Fixed in 0.34.0, left out of its notes: an error could show when background work was listed in a different order than before.
+
 ## 0.34.0
 
 - **Wildcards in search.** A `*` in a tag term stands for any letters: `*burger*` finds notes with a tag containing "burger" (`cheeseburger`, `burger-night`), `burger*` tags that start with it, `*burger` tags that end with it. Capitals are ignored and `-*burger*` leaves those notes out. It matches tags only, a tag's value included, never words in a note's text. A search with a wildcard takes no new note at its top, since there is no single tag to give it.

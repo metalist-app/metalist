@@ -1,3 +1,4 @@
+import { findNoteElement, isEditingInWindow, switchesInWindow } from '../../editing-surface.js';
 import { ModeContextInstance as ModeContext } from '../mode-context.js';
 import * as Logger from '../mode-logger.js';
 import { DOMUtils } from '../../dom-utils.js';
@@ -20,7 +21,7 @@ function getNoteElementIfPresent(noteId) {
     if (typeof noteId !== 'string' || noteId.length === 0) {
         throw new Error('getNoteElementIfPresent requires noteId');
     }
-    return document.querySelector(`.note[data-note-id="${noteId}"]`);
+    return findNoteElement(noteId);
 }
 
 function applyInitialCaretVisibility(initialCaretVisibility) {
@@ -146,13 +147,17 @@ export async function actionDeselectNote() {
 
     const noteElement = getNoteElementIfPresent(noteId);
     let viewportHold = null;
+    // A note edited in a floating window: the list behind it stays where it is.
+    const isInWindow = isEditingInWindow();
     if (noteElement !== null) {
         // Keep the user's place (the caret, or the line being read) through
         // everything leaving edit mode changes: re-collapsing, the tag bar
         // closing, and the note re-rendering for viewing.
         // In a sorted tab the note may then move to its sorted place; the
         // surrounding notes stay on screen instead (docs/ui/controls.md).
-        if (isRootReorderLocked(ModeContext.activeTabSortMode)) {
+        if (isInWindow) {
+            viewportHold = null;
+        } else if (isRootReorderLocked(ModeContext.activeTabSortMode)) {
             viewportHold = captureSortedExitAnchor(noteElement);
         } else if (isEditedRootMovedElsewhere()) {
             // Another view moved it meanwhile (multi-view step 4, case 9): it goes to its new place,
@@ -174,6 +179,7 @@ export async function actionDeselectNote() {
         }
     }
 
+    // A floating window it was edited in shows its notes again (floating-note-editing.js listens).
     clearSelectionStateForDeselect(ModeContext);
 
     const refreshOptions = {startedAt: startedAt};
@@ -260,6 +266,16 @@ export async function actionSwitchNotes(newNoteId, options) {
 		throw new Error('actionSwitchNotes requires options.initialCaretVisibility');
 	}
 	const initialCaretVisibility = options.initialCaretVisibility;
+    // A note edited in a floating window: another of its notes is edited there after a press in
+    // it; any other note is edited in the list, after the window's is saved and left.
+    if (await switchesInWindow(newNoteId, clickAnchorOption(options, newNoteId))) {
+        return;
+    }
+    if (isEditingInWindow()) {
+        await actionDeselectNote();
+        await actionSelectNote(newNoteId, options);
+        return;
+    }
     await showGalleriesAboveAsOutline(newNoteId);
 	let startedAt = performance.now();
     Logger.logAction('switchNotes', { 

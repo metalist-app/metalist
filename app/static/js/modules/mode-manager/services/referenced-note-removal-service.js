@@ -1,3 +1,4 @@
+import { isEditedWindowsOwnNote } from '../../editing-surface.js';
 import { NotesAPI } from '../../api-client.js';
 import { ModeContextInstance as ModeContext } from '../mode-context.js';
 import { CommandGate } from './command-gate-service.js';
@@ -63,6 +64,10 @@ function warningFor(count, verb) {
 // ⌘⌫ and the trash can: delete the note being edited, asking first when
 // other notes reference it.
 export async function deleteEditedNoteAskingIfReferenced(noteId, commandName) {
+    // A floating window's own note is not deleted from inside its window (the maintainer, 2026-11-22).
+    if (isEditedWindowsOwnNote(noteId)) {
+        return;
+    }
     const decision = await confirmRemovingReferencedNote(noteId, 'delete');
     if (decision === 'unreferenced') {
         await CommandGate.run(commandName, async () => {

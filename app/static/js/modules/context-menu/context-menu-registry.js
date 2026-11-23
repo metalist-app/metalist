@@ -444,10 +444,14 @@ function buildNoteContextItems(context, handlers) {
     }
     pushGroup(items, { id: 'paste', label: 'Paste', icon: 'paste', separated: false }, pasteEntries);
 
-    const addEntries = [
-        { id: 'add-sibling-note', label: 'Add Sibling Note', icon: 'add_sibling', enabled: true, shortcut: commandKey('Enter'), onSelect: () => onAddSiblingNote(noteId) },
-        { id: 'add-child-note', label: 'Add Child Note', icon: 'add_child', enabled: true, shortcut: commandShiftKey('Enter'), onSelect: () => onAddChildNote(noteId) },
-    ];
+    // A floating window's own note, edited there: a sibling would be outside the window
+    // (context-menu-events.js isWindowsOwnNote), so neither it nor Delete Note is offered.
+    const isWindowsOwnNote = context.isWindowsOwnNote === true;
+    const addEntries = [];
+    if (!isWindowsOwnNote) {
+        addEntries.push({ id: 'add-sibling-note', label: 'Add Sibling Note', icon: 'add_sibling', enabled: true, shortcut: commandKey('Enter'), onSelect: () => onAddSiblingNote(noteId) });
+    }
+    addEntries.push({ id: 'add-child-note', label: 'Add Child Note', icon: 'add_child', enabled: true, shortcut: commandShiftKey('Enter'), onSelect: () => onAddChildNote(noteId) });
     // After the note's parent, one level out: a root note has no level out, so it is hidden there.
     if (requireNoteFlag(context, 'canAddNoteOneLevelOut')) {
         const onAddNoteOneLevelOut = requireNoteHandler(handlers, 'onAddNoteOneLevelOut');
@@ -543,15 +547,17 @@ function buildNoteContextItems(context, handlers) {
         items.push(...editingItems);
     }
 
-    items.push({
-        id: 'delete-note',
-        label: 'Delete Note',
-        icon: 'trash',
-        enabled: true,
-        separated: true,
-        shortcut: commandKey('Backspace'),
-        onSelect: () => onDeleteNote(noteId),
-    });
+    if (!isWindowsOwnNote) {
+        items.push({
+            id: 'delete-note',
+            label: 'Delete Note',
+            icon: 'trash',
+            enabled: true,
+            separated: true,
+            shortcut: commandKey('Backspace'),
+            onSelect: () => onDeleteNote(noteId),
+        });
+    }
     items.push({
         id: 'note-timestamps',
         kind: 'info',

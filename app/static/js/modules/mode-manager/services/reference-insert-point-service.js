@@ -1,3 +1,4 @@
+import { findNoteContentElement } from '../../editing-surface.js';
 import { ApplicationState, stateValuesEqual } from '../../application-state.js';
 import { ModeContextInstance as ModeContext } from '../mode-context.js';
 import { caretPositionAt } from './viewport-hold-service.js';
@@ -26,7 +27,7 @@ function isRightPress(event) {
 }
 
 function editedNoteContent(noteId) {
-    const content = document.querySelector(`.note[data-note-id="${noteId}"] > .note-content`);
+    const content = findNoteContentElement(noteId);
     if (!(content instanceof HTMLElement)) {
         throw new Error(`Edited note content missing: ${noteId}`);
     }

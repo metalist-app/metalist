@@ -1472,6 +1472,11 @@ class CommandPaletteController {
             return;
         }
 
+        // An entry chosen while a command still runs (an autosave, a search started by a timer)
+        // runs after it, not beside it: the user chose it on purpose, so it is not dropped
+        // (agreed 2026-11-22, case 3). What the entry does next finds the gate free.
+        await CommandGate.whenFree();
+
         if (endpoint.kind === 'boolean') {
             const current = this._getBoolean(endpoint.persistenceKey, endpoint.defaultValue);
             await endpoint.apply(!current);
@@ -1627,7 +1632,26 @@ class CommandPaletteController {
         return ModeContext.activeTabSortMode;
     }
 
+    /**
+     * A change of what the search context shown shows, as a command (CommandGate.asCommand).
+     * It was asked of the context shown now. When that is no longer the one shown once its turn
+     * comes (another view deleted it meanwhile, and this view took that while the change
+     * waited), it does nothing: made late, it would change a context the user did not choose.
+     * The server answers the same for a context deleted a moment ago (tab_state.py).
+     */
+    _asViewCommand(name, change) {
+        const askedOf = ModeContext.activeTabId;
+        return CommandGate.asCommand(name, async () => {
+            if (ModeContext.activeTabId !== askedOf) return;
+            await change();
+        });
+    }
+
     async setSortMode(sortMode) {
+        return this._asViewCommand('view.sortMode', () => this._setSortMode(sortMode));
+    }
+
+    async _setSortMode(sortMode) {
         const normalizedSortMode = normalizeRootSortMode(sortMode);
         const activeTabId = ModeContext.activeTabId;
         if (typeof activeTabId !== 'string' || activeTabId.length === 0) {
@@ -1707,6 +1731,10 @@ class CommandPaletteController {
     }
 
     async setDateFilter(filter) {
+        return this._asViewCommand('view.dateFilter', () => this._setDateFilter(filter));
+    }
+
+    async _setDateFilter(filter) {
         const activeTabId = ModeContext.activeTabId;
         if (typeof activeTabId !== 'string' || activeTabId.length === 0) {
             throw new Error('ModeContext.activeTabId must be a non-empty string');
@@ -1768,6 +1796,10 @@ class CommandPaletteController {
 
     /** Any note ('none'), every note with an attached file ('any'), or one kind of file. */
     async setFileFilter(kind) {
+        return this._asViewCommand('view.fileFilter', () => this._setFileFilter(kind));
+    }
+
+    async _setFileFilter(kind) {
         if (!isFileFilterKind(kind)) {
             throw new Error(`setFileFilter requires a Files filter kind, not ${kind}`);
         }
@@ -1854,6 +1886,10 @@ class CommandPaletteController {
     }
 
     async setIsUntaggedView(isUntaggedView) {
+        return this._asViewCommand('view.untagged', () => this._setIsUntaggedView(isUntaggedView));
+    }
+
+    async _setIsUntaggedView(isUntaggedView) {
         if (typeof isUntaggedView !== 'boolean') {
             throw new Error('isUntaggedView must be a boolean');
         }

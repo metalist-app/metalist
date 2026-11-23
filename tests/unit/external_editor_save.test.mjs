@@ -22,7 +22,7 @@ function harness() {
         Logger:{logAction() {}, logDebug() {}, LogCategory:{DEBUG:'debug', STATE:'state'}},
         NotesAPI:{async saveNote(...args) { saves.push(args); during.save(); return {status:'success'}; }},
         DOMUtils:{getNoteContentHTML:element => element.innerHTML},
-        document:{querySelector:() => note},
+        findNoteElement:() => note,
         getTagBarValue:element => element.tags,
         setTagBarValue(element, value) { element.tags = value; element.dataset.noteTags = value; },
         // Saved tags become the tag bar's baseline, so a later accepted proposal shows in it.

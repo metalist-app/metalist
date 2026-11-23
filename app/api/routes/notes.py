@@ -103,6 +103,8 @@ from app.services.tag_properties import is_property_term, is_stats_term, is_tagl
 from app.services.root_date_filter import RootDateFilter
 from app.services.root_date_filter import make_root_date_filter
 from app.services.snapshot import build_view_state
+from app.services.snapshot import build_window_state
+from app.services.snapshot import is_in_window
 from app.services.snapshot import find_in_view
 from app.services.snapshot import resolve_search_scope
 from app.services.snapshot import ResolvedViewScope, resolve_view_scope_membership
@@ -377,6 +379,9 @@ def view_diff(payload: ViewDiffRequest):
     is_untagged_view = payload["isUntaggedView"]
     if not isinstance(is_untagged_view, bool):
         raise TypeError("isUntaggedView must be a boolean")
+    editing_in_window = payload["editingInWindow"]
+    if not isinstance(editing_in_window, bool):
+        raise TypeError("editingInWindow must be a boolean")
     # Go to Bottom: load the band that ends at the view's last root.
     start_at_list_end = payload["startAtListEnd"]
     if not isinstance(start_at_list_end, bool):
@@ -426,6 +431,13 @@ def view_diff(payload: ViewDiffRequest):
     edit_lock = edit_locks.sync_editing(view_id=view_id, note_id=held_note_id, tells_taken=False)
     if "lockedWhere" in edit_lock:
         normalized_editing_note_id = None
+    # A note edited in a floating window: held as above, drawn in the list as any note another
+    # view edits, and the window gets it to edit (/notes/{id}/floating/editing).
+    window_editing_note_id: str | None = None
+    list_editing_note_id = normalized_editing_note_id
+    if editing_in_window and normalized_editing_note_id is not None:
+        window_editing_note_id = normalized_editing_note_id
+        list_editing_note_id = None
 
     # Like editingNoteId, the note find opened can be gone by now (deleted, undone).
     if find_reveal_note_id is not None and not note_store.has_note(find_reveal_note_id):
@@ -454,7 +466,7 @@ def view_diff(payload: ViewDiffRequest):
     # browser asks again when the status it polls reports a later one (multi-view step 3).
     notes_revision_shown = note_store.revision
     state = build_view_state(
-        editing_note_id=normalized_editing_note_id,
+        editing_note_id=list_editing_note_id,
         find_reveal_note_id=find_reveal_note_id,
         search=normalized_search,
         sort_mode=sort_mode,
@@ -491,7 +503,8 @@ def view_diff(payload: ViewDiffRequest):
         "rootWindowStart": state.metadata["rootWindowStart"],
         "rootBandMargin": state.metadata["rootBandMargin"],
         "rootSortKeyBeforeWindow": state.metadata["rootSortKeyBeforeWindow"],
-        "editingNoteId": normalized_editing_note_id,
+        "editingNoteId": list_editing_note_id,
+        "windowEditingNoteId": window_editing_note_id,
         # Reference pages closed with their deleted notes: the browser takes the tabs again.
         "pagesClosedAtVersion": tab_state_store.pages_closed_at_version(),
         # The notes as of this revision at least: a later one in the status means another view
@@ -1297,17 +1310,30 @@ def note_fullscreen(note_id: str) -> Dict[str, str]:
 
 @router.get("/notes/{note_id}/floating")
 @serialized_read_route
-def note_floating_window(note_id: str, revision: str) -> dict[str, str]:
+def note_floating_window(note_id: str, revision: str) -> dict[str, object]:
+    """A floating window's notes as the list draws them, folded as saved (build_window_state)."""
     current_revision = f"{get_current_sync_uuid()}:{link_title_store.get_revision()}"
     if not note_store.has_note(note_id):
-        return {"revision": current_revision, "status": "deleted", "html": ""}
+        return {"revision": current_revision, "status": "deleted", "structure": [], "notes": {}}
     if revision == current_revision:
-        return {"revision": current_revision, "status": "unchanged", "html": ""}
-    return {
-        "revision": current_revision,
-        "status": "ready",
-        "html": build_note_fullscreen_markup(note_id),
-    }
+        return {"revision": current_revision, "status": "unchanged", "structure": [], "notes": {}}
+    state = build_window_state(window_note_id=note_id, editing_note_id=None)
+    return {"revision": current_revision, "status": "ready", "structure": state.structure, "notes": state.payloads}
+
+
+# A floating window while a note in it is edited (docs/ui/state-handling.md, "Floating note
+# windows"): its notes as /floating draws them, the edited one drawn for editing. The view holds the edited note's lock through /notes/view (editingInWindow).
+@router.get("/notes/{note_id}/floating/editing")
+@serialized_read_route
+def note_floating_window_editing(note_id: str, editingNoteId: str) -> dict[str, object]:
+    _require_note_present(note_id, context="notes.floating.editing")
+    _require_note_present(editingNoteId, context="notes.floating.editing")
+    # Moved out from under the window's note meanwhile (another view, or this one): the window
+    # no longer shows it.
+    if not is_in_window(window_note_id=note_id, note_id=editingNoteId):
+        return {"status": "outside", "structure": [], "notes": {}, "editingNoteId": editingNoteId}
+    state = build_window_state(window_note_id=note_id, editing_note_id=editingNoteId)
+    return {"status": "ready", "structure": state.structure, "notes": state.payloads, "editingNoteId": editingNoteId}
 
 
 @router.get("/notes/{note_id}/preview")

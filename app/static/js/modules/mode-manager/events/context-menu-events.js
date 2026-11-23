@@ -1,3 +1,4 @@
+import { findNoteElement, isEditedWindowsOwnNote } from '../../editing-surface.js';
 import { currentThemeChoice } from '../../theme-choices.js';
 import { showVirtualFoldersMenu } from '../services/virtual-folders-service.js';
 import { MS_PER_SECOND } from '../../time-units.js';
@@ -130,7 +131,7 @@ async function resizeImageFromContext(imageContext, action) {
     // Where the user is working in the edited note, so the resize leaves it there.
     let editingFocus = null;
     if (ModeContext.isEditingNote(hostNoteId)) {
-        const editedNote = document.querySelector(`.note[data-note-id="${hostNoteId}"]`);
+        const editedNote = findNoteElement(hostNoteId);
         if (!(editedNote instanceof HTMLElement)) {
             throw new Error(`Editing note element missing before image resize: ${hostNoteId}`);
         }
@@ -158,7 +159,7 @@ async function resizeImageFromContext(imageContext, action) {
         throw new Error('Image resize response must include editingImageSizes');
     }
     if (ModeContext.isEditingNote(hostNoteId)) {
-        const noteElement = document.querySelector(`.note[data-note-id="${hostNoteId}"]`);
+        const noteElement = findNoteElement(hostNoteId);
         if (!(noteElement instanceof HTMLElement)) {
             throw new Error(`Editing note element missing after image resize: ${hostNoteId}`);
         }
@@ -640,7 +641,7 @@ async function addStyleFromContextMenu(noteId, styleTag, selectedTextRange) {
         throw new Error('Add Style selection must be Range or null');
     }
 
-    const noteElement = document.querySelector(`.note[data-note-id="${noteId}"]`);
+    const noteElement = findNoteElement(noteId);
     if (!(noteElement instanceof HTMLElement)) {
         throw new Error(`Add Style note element missing: ${noteId}`);
     }
@@ -771,7 +772,9 @@ function describeOutlinePosition(noteElement) {
         canMoveDown,
         canIndent: hasPrevious,
         canOutdent: !isRoot,
-        canAddNoteOneLevelOut: !isRoot,
+        // One level out from a note right under a floating window's own note is beside that
+        // note, outside the window: none is made there (the maintainer, 2026-11-22).
+        canAddNoteOneLevelOut: !isRoot && !isEditedWindowsOwnNote(parentId),
     };
 }
 
@@ -991,7 +994,7 @@ function showNoteContextMenu(event, noteId, imageContext, selectedTextRange, ref
     if (typeof event.clientX !== 'number' || typeof event.clientY !== 'number') {
         throw new Error('Context menu event missing coordinates');
     }
-    const noteElement = document.querySelector(`.note[data-note-id="${noteId}"]`);
+    const noteElement = findNoteElement(noteId);
     if (!(noteElement instanceof HTMLElement)) {
         throw new Error(`Context menu note element missing: ${noteId}`);
     }
@@ -1019,6 +1022,8 @@ function showNoteContextMenu(event, noteId, imageContext, selectedTextRange, ref
     const context = {
         kind: 'note',
         noteId,
+        // The note a floating window shows, edited in it: neither deleted nor given a sibling there.
+        isWindowsOwnNote: isEditedWindowsOwnNote(noteId),
         isMac: isMacPlatform(),
         ...outline,
         noteTimestamps: {
@@ -1233,6 +1238,9 @@ function showNoteContextMenu(event, noteId, imageContext, selectedTextRange, ref
                 });
             },
             onDeleteNote: (targetNoteId) => {
+                if (isEditedWindowsOwnNote(targetNoteId)) {
+                    throw new Error('Delete Note is not offered for a floating window\'s own note');
+                }
                 // Other notes referencing it: asked first; the dialog leaves edit mode.
                 void confirmRemovingReferencedNote(targetNoteId, 'delete').then((decision) => {
                     if (decision === null || decision === 'cancelled') {

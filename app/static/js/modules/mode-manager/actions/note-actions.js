@@ -1,3 +1,4 @@
+import { findNoteElement, isEditedWindowsOwnNote, redrawsEditedNoteInWindow } from '../../editing-surface.js';
 import { showGalleryAndThoseAboveAsOutline } from '../services/gallery-view-service.js';
 import { ModeContextInstance as ModeContext } from '../mode-context.js';
 import * as Logger from '../mode-logger.js';
@@ -113,7 +114,7 @@ function removeCachedHashesForDomSubtree(noteId) {
             ModeContext.removeNoteHash(id);
         }
     };
-    const noteElement = document.querySelector(`.note[data-note-id="${noteId}"]`);
+    const noteElement = findNoteElement(noteId);
     if (!noteElement) {
         forgetCachedHash(noteId);
         return;
@@ -519,6 +520,10 @@ async function createNoteWithPlacement(placeAtTop) {
 
     const currentNoteId = ModeContext.isEditing ? ModeContext.currentNoteId : null;
 
+    // In a floating window, beside the window's own note is outside the window: no note goes there.
+    if (!placeAtTop && currentNoteId && isEditedWindowsOwnNote(currentNoteId)) {
+        return null;
+    }
     // A sibling of a child note is not a root note, so the sort does not limit it.
     if (!placeAtTop && currentNoteId) {
         if (refuseOutsideLinkedNote('sibling', currentNoteId, '')) {
@@ -546,7 +551,7 @@ async function createNoteWithPlacement(placeAtTop) {
         // The first loaded note is the list's first root only when the band of
         // loaded roots starts there; otherwise ask the server for the true top.
         // Editing the new note then centres the band on it.
-        const firstVisibleNote = document.querySelector('.note');
+        const firstVisibleNote = document.querySelector('#notes-container .note');
         const firstVisibleNoteId = firstVisibleNote && !ModeContext.hasRootsAboveWindow()
             ? firstVisibleNote.dataset.noteId
             : '';
@@ -587,7 +592,9 @@ export async function createNoteAfterParent() {
     });
 
     const currentNoteId = ModeContext.isEditing ? ModeContext.currentNoteId : null;
-    if (currentNoteId === null || isRootNoteId(currentNoteId)) {
+    // The window's own note has no level out in its window, as a root has none: ⌘Enter's note
+    // (which createNote refuses there).
+    if (currentNoteId === null || isRootNoteId(currentNoteId) || isEditedWindowsOwnNote(currentNoteId)) {
         return await createNote();
     }
 
@@ -595,6 +602,10 @@ export async function createNoteAfterParent() {
         return null;
     }
     const parentNoteId = DOMUtils.getNoteById(currentNoteId).dataset.parentId;
+    // Beside the window's own note is outside its window.
+    if (isEditedWindowsOwnNote(parentNoteId)) {
+        return null;
+    }
     // A sibling of a root parent is itself a root, which a sort may forbid here.
     if (isRootNoteId(parentNoteId) && blockRootNoteCreation('below', 'createNoteAfterParent')) {
         return null;
@@ -1356,6 +1367,11 @@ async function pasteAsSibling(actionName, requestPaste) {
     if (newNoteId === currentNoteId) {
         const startedAt = performance.now();
         const newContent = await actionRefreshAndMaybeSelect({ startedAt, context: 'pasteNoteSiblingInto' });
+        // Edited in a floating window: the window draws it again, and the page behind stays.
+        if (await redrawsEditedNoteInWindow()) {
+            ModeContext.resetEditSessionState({ startedCollapsed: false });
+            return true;
+        }
         if (ModeContext.currentContent !== newContent && newContent !== null) {
             ModeContext.setCurrentContent(newContent);
         }

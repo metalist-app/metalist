@@ -1,3 +1,4 @@
+import { findListNoteElement } from '../../editing-surface.js';
 import { restoreOldeWords } from '../../skin-olde-words.js';
 import { parseDecimalInteger } from '../../decimal-integer.js';
 import { ApplicationState } from '../../application-state.js';
@@ -103,7 +104,7 @@ function captureCollapseAnimationsFromNotePayload(notePayload) {
         if (!Object.prototype.hasOwnProperty.call(flags, 'isCollapsed')) {
             continue;
         }
-        const noteElement = document.querySelector(`.note[data-note-id="${noteId}"]`);
+        const noteElement = findListNoteElement(noteId);
         if (!(noteElement instanceof HTMLElement)) {
             continue;
         }
@@ -218,7 +219,7 @@ function applyServerDiffOps(payload, animateNoteChanges) {
         return {
             notesContainer,
             editingNoteElement: payload.editingNoteId
-                ? document.querySelector(`.note[data-note-id="${payload.editingNoteId}"]`)
+                ? findListNoteElement(payload.editingNoteId)
                 : null,
             vdomOperations: 0,
         };
@@ -252,7 +253,7 @@ function applyServerDiffOps(payload, animateNoteChanges) {
         if (!parentId) {
             return notesContainer;
         }
-        const parentElement = document.querySelector(`.note[data-note-id="${parentId}"]`);
+        const parentElement = findListNoteElement(parentId);
         if (!parentElement) {
             throw new Error(`Parent note ${parentId} missing from DOM`);
         }
@@ -263,7 +264,7 @@ function applyServerDiffOps(payload, animateNoteChanges) {
         if (noteElements.has(noteId)) {
             return noteElements.get(noteId);
         }
-        const element = document.querySelector(`.note[data-note-id="${noteId}"]`);
+        const element = findListNoteElement(noteId);
         if (element) {
             noteElements.set(noteId, element);
         }
@@ -329,6 +330,7 @@ function applyServerDiffOps(payload, animateNoteChanges) {
                     payload.currentClientId,
                     affordanceDirtyElements,
                     !existingElement,
+                    true,
                 );
             }
             parentContainer.insertBefore(element, reference);
@@ -380,6 +382,7 @@ function applyServerDiffOps(payload, animateNoteChanges) {
             payload.currentClientId,
             affordanceDirtyElements,
             false,
+            true,
         );
         noteElements.set(noteId, element);
         if (contentChanged) {
@@ -412,7 +415,7 @@ function applyServerDiffOps(payload, animateNoteChanges) {
     return {
         notesContainer,
         editingNoteElement: payload.editingNoteId
-            ? document.querySelector(`.note[data-note-id="${payload.editingNoteId}"]`)
+            ? findListNoteElement(payload.editingNoteId)
             : null,
         vdomOperations,
     };
@@ -701,7 +704,7 @@ export function applyDifferentialView(payload, options) {
         }
         let parentElement = elementCache.get(parentId);
         if (!parentElement) {
-            parentElement = document.querySelector(`.note[data-note-id="${parentId}"]`);
+            parentElement = findListNoteElement(parentId);
         }
         if (!parentElement) {
             throw new Error(`Parent note ${parentId} missing from DOM`);
@@ -761,7 +764,7 @@ export function applyDifferentialView(payload, options) {
                 const reference = findNoteChildAt(parentContainer, op.toIndex);
                 let element = elementCache.get(op.id);
                 if (!element) {
-                    element = document.querySelector(`.note[data-note-id="${op.id}"]`);
+                    element = findListNoteElement(op.id);
                 }
                 if (element) {
                     parentContainer.insertBefore(element, reference);
@@ -808,7 +811,7 @@ export function applyDifferentialView(payload, options) {
 
         let noteElement = elementCache.get(noteId);
         if (!noteElement) {
-            noteElement = document.querySelector(`.note[data-note-id="${noteId}"]`);
+            noteElement = findListNoteElement(noteId);
         }
         if (!noteElement) {
             throw new Error(`Note ${noteId} missing from DOM after diff`);
@@ -1030,7 +1033,7 @@ export function applyDifferentialView(payload, options) {
     for (const parentId of touchedParentIds) {
         let parentElement = elementCache.get(parentId);
         if (!parentElement) {
-            parentElement = document.querySelector(`.note[data-note-id="${parentId}"]`);
+            parentElement = findListNoteElement(parentId);
         }
         if (parentElement) {
             affordanceDirtyElements.add(parentElement);
@@ -1052,7 +1055,7 @@ export function applyDifferentialView(payload, options) {
 
     return {
         notesContainer,
-        editingNoteElement: payload.editingNoteId ? document.querySelector(`.note[data-note-id="${payload.editingNoteId}"]`) : null,
+        editingNoteElement: payload.editingNoteId ? findListNoteElement(payload.editingNoteId) : null,
         vdomOperations,
     };
 }
@@ -1162,8 +1165,13 @@ function collectSubtreeIds(node) {
     return ids;
 }
 
+// `isListNote`: the list's own note, whose version the list keeps (ModeContext's note hashes);
+// a floating window's copy (buildWindowNoteTree) keeps none.
 function applyNoteDataFromPayload(noteElement, noteId, noteData, noteLocks, currentClientId,
-    affordanceSet, forceContentUpdate) {
+    affordanceSet, forceContentUpdate, isListNote) {
+    if (typeof isListNote !== 'boolean') {
+        throw new Error('applyNoteDataFromPayload requires isListNote');
+    }
     if (!noteElement || !noteData) {
         return false;
     }
@@ -1265,7 +1273,7 @@ function applyNoteDataFromPayload(noteElement, noteId, noteData, noteLocks, curr
         noteElement.dataset.contentHash = snapshotHash;
     }
 
-    if (snapshotHash) {
+    if (snapshotHash && isListNote) {
         // A server snapshot can change descendants while echoing the parent's
         // unchanged hash. Publish only the actual hash delta from that snapshot.
         if (!ModeContext.hasNoteHash(noteId) || ModeContext.getNoteHash(noteId) !== snapshotHash) {
@@ -1285,7 +1293,7 @@ function applyLockDiffs(lockDiffs, currentClientId, affordanceSet) {
         return;
     }
     for (const [noteId, owner] of Object.entries(lockDiffs)) {
-        const noteElement = document.querySelector(`.note[data-note-id="${noteId}"]`);
+        const noteElement = findListNoteElement(noteId);
         if (!noteElement) {
             continue;
         }
@@ -1319,4 +1327,44 @@ function collectDomSubtreeIds(rootElement) {
         }
     }
     return ids;
+}
+
+
+/**
+ * Draws a floating window's notes (floating-note-editing.js): the notes the server sent
+ * (/notes/{id}/floating, or /floating/editing while one is edited), built as the list builds its
+ * own, into `container`, which must be empty. The list's own state is left alone. Returns the
+ * edited note's element, or null when `editingNoteId` is null.
+ */
+export function buildWindowNoteTree(container, structure, notes, editingNoteId) {
+    if (!(container instanceof HTMLElement) || container.children.length > 0) {
+        throw new Error('buildWindowNoteTree requires an empty container');
+    }
+    if (!Array.isArray(structure) || structure.length === 0 || notes === null || typeof notes !== 'object') {
+        throw new Error('buildWindowNoteTree requires the notes to draw');
+    }
+    const { roots, nodeById } = buildDesiredForest(structure, notes);
+    if (roots.length !== 1) {
+        throw new Error(`A floating window draws one note and those under it, not ${roots.length}`);
+    }
+    const elementCache = new Map();
+    container.appendChild(createNoteSubtree(roots[0], nodeById, elementCache, null, null));
+    for (const entry of structure) {
+        const element = elementCache.get(entry.id);
+        // The window's note has no parent in the window (it is shown without its ancestors).
+        if (entry.parentId === null) {
+            element.dataset.parentId = '';
+        } else {
+            element.dataset.parentId = entry.parentId;
+        }
+        applyNoteDataFromPayload(element, entry.id, notes[entry.id], {}, ModeContext.clientId, null, true, false);
+    }
+    if (editingNoteId === null) {
+        return null;
+    }
+    const editingElement = elementCache.get(editingNoteId);
+    if (editingElement === undefined) {
+        throw new Error(`buildWindowNoteTree: the edited note ${editingNoteId} is not among those drawn`);
+    }
+    return editingElement;
 }

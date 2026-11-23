@@ -1,3 +1,4 @@
+import { gateWithTheTurn } from './gate_stand_ins.mjs';
 import { ApplicationState } from '../../app/static/js/modules/application-state.js';
 import { MS_PER_SECOND } from '../../app/static/js/modules/time-units.js';
 import assert from 'node:assert/strict';
@@ -52,12 +53,16 @@ function buildHarness() {
     };
     const uiDependencies = {
         MS_PER_SECOND,
+        // These tests set a refresh against a tab switch themselves, as before every refresh took a turn.
+        CommandGate: gateWithTheTurn(),
         setSearchHighlightPhrases() {},
         // No reference pages closed with their notes in these views.
         noticeClosedReferencePages() {},
         recordNotesShown() {},
         recordEditedRootMovedElsewhere() {},
         recordLockedRoots() {},
+        // No note is edited in a floating window here (editing-surface.js).
+        isEditingInWindow: () => false, markNoteEditedInWindow() {},
         noticeRefusedEdit() {},
         tellOtherTabsWhatIsEdited() {},
         ModeContext,
@@ -117,7 +122,7 @@ function buildHarness() {
     const switchToTabContext = new Function(
         ...Object.keys(switchDependencies), `${switchSource}\nreturn switchToTabContext;`,
     )(...Object.values(switchDependencies));
-    return { events, heldFetch, uiActions, switchToTabContext };
+    return { events, heldFetch, uiActions: { ...uiActions, ModeContext }, switchToTabContext };
 }
 
 test('tab switch applies an in-flight view response to its own tab before caching that tab', async () => {
@@ -143,4 +148,28 @@ test('tab switch positions the restored DOM before waiting on any refresh', asyn
     assert.ok(restoreIndex >= 0, events.join(' '));
     assert.equal(events[restoreIndex + 1], 'scroll-now:B', events.join(' '));
     assert.ok(events.indexOf('scroll-now:B') < events.indexOf('fetch:B'), events.join(' '));
+});
+
+// A refresh that waits its turn behind a tab change is for the tab shown once its turn comes. It
+// read its tab when asked, so it went out for the old one and came back to another: "notes.view
+// response for tab A arrived after the active tab changed to B" (GitHub, Firefox, 2026-11-22).
+test('a refresh that waited behind a tab switch asks for the tab shown now', async () => {
+    const { events, heldFetch, uiActions, switchToTabContext } = buildHarness();
+
+    const first = uiActions.actionRefreshAndMaybeSelect({ context: 'infinite-scroll' });
+    const pendingSwitch = switchToTabContext('B', {});
+    // The switch is waiting first, so it goes first.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const waiting = uiActions.actionRefreshAndMaybeSelect({ context: 'poll' });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    heldFetch.resolve();
+    await Promise.all([first, pendingSwitch, waiting]);
+
+    // Whichever of the two waiting went first (their timers decide), every view asked for was
+    // shown in the tab it was asked for: none came back to another tab.
+    const tabsAsked = events.filter(event => event.startsWith('fetch:')).map(event => event.slice('fetch:'.length));
+    const tabsShownIn = events.filter(event => event.startsWith('apply:')).map(event => event.slice('apply:'.length));
+    assert.equal(tabsAsked.length, 3);
+    assert.deepEqual(tabsShownIn, tabsAsked);
+    assert.equal(tabsAsked[tabsAsked.length - 1], 'B', 'the last view is of the tab shown');
 });

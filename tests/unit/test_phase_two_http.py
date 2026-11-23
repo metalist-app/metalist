@@ -121,7 +121,7 @@ def test_required_request_schema_rejects_bad_input_before_route():
     assert client.post('/view', json={}).status_code == 422
     assert client.post('/view', json={'clientId': 'PRIVATE_CANARY'}).status_code == 422
     schema = app.openapi()['components']['schemas']['ViewDiffRequest']
-    assert set(schema['required']) == {'clientId','editingNoteId','findRevealNoteId','search','tabId','undoContext','tabViewEmpty','visibleTopRootId','visibleBottomRootId','isUntaggedView','startAtListEnd'}
+    assert set(schema['required']) == {'clientId','editingNoteId','findRevealNoteId','search','tabId','undoContext','tabViewEmpty','visibleTopRootId','visibleBottomRootId','isUntaggedView','startAtListEnd','editingInWindow'}
 
 
 @pytest.fixture
@@ -373,7 +373,7 @@ assert client.post(API_PREFIX + "/ontology/rules", headers=headers, json={}).sta
 assert client.post(API_PREFIX + "/notes/tab-state/new-tab", headers=headers, json={"copyFromTabId":"stale","copiesView":True,"isPage":False,"clientId":"client"}).status_code == 400
 assert client.post(API_PREFIX + "/reminders/evaluate", headers=headers, json={"now":"bad-date","local_date":"bad-date","activity_kind":"visible"}).status_code == 400
 state = client.get(API_PREFIX + "/notes/tab-state", headers=headers).json()
-view = {"clientId":"client", "editingNoteId":None, "findRevealNoteId":None, "search":None, "tabId":state["activeTabId"], "undoContext":"client", "tabViewEmpty":True, "visibleTopRootId":None, "visibleBottomRootId":None,"isUntaggedView":False,"startAtListEnd":False}
+view = {"clientId":"client", "editingNoteId":None, "findRevealNoteId":None, "search":None, "tabId":state["activeTabId"], "undoContext":"client", "tabViewEmpty":True, "visibleTopRootId":None, "visibleBottomRootId":None,"isUntaggedView":False,"startAtListEnd":False,"editingInWindow":False}
 response = client.post(API_PREFIX + "/notes/view", headers=headers, json=view)
 assert response.status_code == 200, (response.status_code, response.text)
 '''

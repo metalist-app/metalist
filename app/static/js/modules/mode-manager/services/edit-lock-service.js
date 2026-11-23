@@ -6,6 +6,7 @@
 // server refused for it (its fold arrow, a checkbox, a move) takes it over and is sent again, and
 // neither view holds it afterwards (case 6, api-client.js). The view a root is taken from saves its
 // typing and leaves (leaveTakenOverEditing).
+import { findNoteContentElement } from '../../editing-surface.js';
 import { ApplicationState } from '../../application-state.js';
 import { CONFIG } from '../../config.js';
 import { ErrorHandler } from '../../error-handler.js';
@@ -251,7 +252,7 @@ export function leaveTakenOverEditing(lock) {
             FloatingMessages.show({ text: message, type: 'info', detail: '', isClosable: true, isLasting: false, key: null, action: null });
             return;
         }
-        const editor = document.querySelector(`.note[data-note-id="${CSS.escape(ModeContext.currentNoteId)}"] > .note-content`);
+        const editor = findNoteContentElement(ModeContext.currentNoteId);
         if (!(editor instanceof HTMLElement)) {
             throw new Error('The note being edited is not shown');
         }

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from app.services.snapshot import WindowState
 import html
 import re
 from dataclasses import dataclass
@@ -126,12 +127,14 @@ def test_floating_window_refreshes_only_when_revision_changes(monkeypatch: pytes
     store = _FakeNoteStore(notes={"child": _Note("child", "parent", "Child", "")}, children={})
     rendered: list[str] = []
 
-    def render(note_id: str) -> str:
-        rendered.append(note_id)
-        return "<article>Live child and descendants</article>"
+    # The window's notes as the list draws them (snapshot.build_window_state).
+    def render(*, window_note_id: str, editing_note_id: str | None) -> WindowState:
+        assert editing_note_id is None
+        rendered.append(window_note_id)
+        return WindowState(structure=[{"id": window_note_id, "parentId": None}], payloads={window_note_id: {"content": "Live child"}})
 
     monkeypatch.setattr(notes_route, "note_store", store)
-    monkeypatch.setattr(notes_route, "build_note_fullscreen_markup", render)
+    monkeypatch.setattr(notes_route, "build_window_state", render)
     monkeypatch.setattr(notes_route, "get_current_sync_uuid", lambda: "revision-a")
     monkeypatch.setattr(notes_route.link_title_store, "get_revision", lambda: 1)
     first = notes_route.note_floating_window("child", "")
@@ -145,7 +148,7 @@ def test_floating_window_refreshes_only_when_revision_changes(monkeypatch: pytes
     assert notes_route.note_floating_window("child", refreshed["revision"])["status"] == "ready"
     del store._notes["child"]
     assert notes_route.note_floating_window("child", "revision-b:2") == {
-        "status": "deleted", "revision": "revision-b:2", "html": "",
+        "status": "deleted", "revision": "revision-b:2", "structure": [], "notes": {},
     }
     store._notes["child"] = _Note("child", "parent", "Restored child", "")
     monkeypatch.setattr(notes_route, "get_current_sync_uuid", lambda: "revision-c")

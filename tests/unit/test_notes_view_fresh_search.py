@@ -59,6 +59,7 @@ def test_view_diff_does_not_use_cached_anchor_without_client_render_state(monkey
             "visibleBottomRootId": None,
             "findRevealNoteId": None,
             "startAtListEnd": False,
+            "editingInWindow": False,
             "isUntaggedView": False,
         }
     )
@@ -131,6 +132,7 @@ def test_view_diff_can_use_cached_anchor_when_client_has_render_state(monkeypatc
             "visibleBottomRootId": None,
             "findRevealNoteId": None,
             "startAtListEnd": False,
+            "editingInWindow": False,
             "isUntaggedView": False,
         }
     )

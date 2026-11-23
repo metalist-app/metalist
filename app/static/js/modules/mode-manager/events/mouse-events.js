@@ -1,3 +1,4 @@
+import { isCopyOfNoteEditedInWindow, startDraggingInWindow, stopDraggingInWindow } from '../../editing-surface.js';
 import { half } from '../../half.js';
 import { ApplicationState } from '../../application-state.js';
 import { rethrowUnexpectedError } from '../../expected-errors.js';
@@ -79,6 +80,8 @@ const moduleState = ApplicationState.createFields('mouse-events', {
     ignoreClickAfterSelectionDrag: null,
     moveDragContext: null,
     ignoreClickAfterMoveDrag: null,
+    // While a note is dragged in a floating window: its scrolling area and scroll listener.
+    windowDragScroll: null,
     ignoreClickAfterMouseDownAction: null,
     // The timer of a single click on a rendered diagram, waiting out the double-click window.
     pendingDiagramClickEdit: null,
@@ -109,6 +112,10 @@ const SHELL_RUN_TIMEOUT_SECONDS = 0;
 const SHELL_POLL_INTERVAL_MS = 250;
 // The click a browser fires on release after a drag is ignored for this long.
 const CLICK_AFTER_DRAG_IGNORE_MS = 500;
+// A drag in a floating window scrolls the window when the pointer is this near its top or
+// bottom edge, by this much at each move of the pointer.
+const WINDOW_DRAG_EDGE_PX = 24;
+const WINDOW_DRAG_SCROLL_STEP_PX = 12;
 const INDENT_DROP_LINE_MIN_WIDTH_PX = 24;
 // How many elements under a press the log names, innermost first.
 const PRESS_PATH_LOG_DEPTH = 6;
@@ -143,6 +150,12 @@ export function initMouseEvents() {
     Logger.logInit('Mouse events handler');
 }
 
+
+// Whether a click on `noteElement` is in the note being edited: not when it is the list's copy
+// of a note edited in a floating window, where a click moves the editing to the list.
+function isEditedHere(noteId, noteElement) {
+    return ModeContext.isEditingNote(noteId) && !isCopyOfNoteEditedInWindow(noteElement);
+}
 function handleDiagramDoubleClick(event) {
     if (event.button !== 0) {
         return;
@@ -187,7 +200,7 @@ function scheduleDiagramClickEdit(event) {
     };
     moduleState.pendingDiagramClickEdit = window.setTimeout(() => {
         moduleState.pendingDiagramClickEdit = null;
-        if (ModeContext.isEditingNote(noteId)) {
+        if (isEditedHere(noteId, noteElement)) {
             return;
         }
         if (ModeContext.isSearching) {
@@ -222,6 +235,7 @@ function beginMouseGesture(event) {
 
 function cancelMouseGesture() {
     if (moduleState.moveDragContext?.dragActive) setMoveDragCursorActive(false);
+    stopWindowDrag();
     for (const field of [
         'moveDragContext', 'selectionDragContext', 'ignoreClickAfterMoveDrag',
         'ignoreClickAfterSelectionDrag', 'ignoreClickAfterMouseDownAction',
@@ -441,7 +455,7 @@ function handleNoteShellMouseDown(event, noteElement) {
         initialCaretVisibility: 'visible',
         clickAnchor: captureClickAnchor(noteElement, event.clientX, event.clientY),
     };
-    if (!ModeContext.isEditingNote(noteId)) {
+    if (!isEditedHere(noteId, noteElement)) {
         if (ModeContext.currentNoteId) {
             // Keys typed while it opens are kept and typed into it (type-ahead-service.js);
             // only the command that runs opens it (a click right after a mouse-down finds it busy).
@@ -712,28 +726,116 @@ function handleMoveDragMouseDown(event) {
     if (!event) {
         throw new Error('handleMoveDragMouseDown called without an event object');
     }
+    if (!event.target) {
+        throw new Error('Move drag mousedown missing target element');
+    }
+    // A press in the list: any drag left over from a floating window is over.
+    stopWindowDrag();
+    beginMoveDrag(event, event.target, null);
+}
+
+// Dragging a note inside a floating window (agreed 2026-11-22; docs/ui/state-handling.md,
+// "Dragging in a floating window"): the list's own drag, finding its notes in the window's
+// drawing (editing-surface.js). A window keeps its presses to itself, so floating-note-service.js
+// passes them on here, with the element really under the pointer (`target`: an event that
+// leaves a window's shadow root names only the window).
+// `floatingWindow`: { tree, scrollArea }, the window's drawing and its scrolling area.
+export function beginMoveDragInWindow(event, target, floatingWindow) {
+    if (!(target instanceof Element) || floatingWindow === null || typeof floatingWindow !== 'object'
+        || !(floatingWindow.tree instanceof HTMLElement) || !(floatingWindow.scrollArea instanceof HTMLElement)) {
+        throw new Error('beginMoveDragInWindow requires the pressed element and the window');
+    }
+    stopWindowDrag();
+    beginMoveDrag(event, target, floatingWindow);
+}
+
+export function continueMoveDragInWindow(event, target) {
+    const context = moduleState.moveDragContext;
+    if (!context || context.floatingWindow === null) return;
+    continueMoveDrag(event, target);
+}
+
+export function finishMoveDragInWindow(event, target) {
+    const context = moduleState.moveDragContext;
+    if (!context || context.floatingWindow === null) return;
+    finishMoveDrag(event, target);
+}
+
+/** A click that ends a drag in a floating window is no click on the note (as in the list). */
+export function takeClickAfterMoveDrag() {
+    const ignored = moduleState.ignoreClickAfterMoveDrag;
+    if (ignored === null) return false;
+    moduleState.ignoreClickAfterMoveDrag = null;
+    return performance.now() <= ignored.ignoreUntil;
+}
+
+// The scroll listener of the window a note is dragged in, with the window it is on.
+function stopWindowDrag() {
+    const watched = moduleState.windowDragScroll;
+    if (watched !== null) {
+        watched.scrollArea.removeEventListener('scroll', watched.onScroll);
+        moduleState.windowDragScroll = null;
+    }
+    stopDraggingInWindow();
+}
+
+// The window scrolled while a note is dragged in it (its edge reached, or the wheel): the notes
+// moved under a still pointer by `scrolledBy`, so the drag is measured from where the note is
+// now, and the drop is resolved again.
+function followWindowScroll(scrolledBy) {
+    const context = moduleState.moveDragContext;
+    if (!context || context.floatingWindow === null) return;
+    context.startY -= scrolledBy;
+    context.ghostRect = null;
+    if (context.dragActive) {
+        const under = context.floatingWindow.tree.getRootNode().elementFromPoint(context.lastX, context.lastY);
+        renderMoveDragIndicators(context, under);
+    }
+}
+
+// Near the top or bottom edge of the window's scrolling area, a drag scrolls it (case 5); the
+// page behind does not move.
+function scrollWindowAtItsEdges(context, clientY) {
+    const area = context.floatingWindow.scrollArea;
+    const box = area.getBoundingClientRect();
+    if (clientY < box.top + WINDOW_DRAG_EDGE_PX) {
+        area.scrollTop -= WINDOW_DRAG_SCROLL_STEP_PX;
+    } else if (clientY > box.bottom - WINDOW_DRAG_EDGE_PX) {
+        area.scrollTop += WINDOW_DRAG_SCROLL_STEP_PX;
+    }
+}
+
+// Whether `noteElement`, in a floating window's drawing, is the window's own note or right under it.
+function isWindowsOwnNoteElement(noteElement, floatingWindow) {
+    return floatingWindow !== null && noteElement.parentElement === floatingWindow.tree;
+}
+
+function isRightUnderWindowsOwnNote(noteElement, floatingWindow) {
+    if (floatingWindow === null) return false;
+    const parent = noteElement.parentElement.closest('.note');
+    return parent !== null && isWindowsOwnNoteElement(parent, floatingWindow);
+}
+
+function beginMoveDrag(event, target, floatingWindow) {
     if (typeof event.button !== 'number') {
         throw new Error(`Invalid MouseEvent: missing button (type: ${event.type})`);
     }
     if (event.button !== 0) {
         return;
     }
-    if (!event.target) {
-        throw new Error('Move drag mousedown missing target element');
-    }
-    if (isViewModeNoteDisclosureToggle(event.target)) {
+    if (isViewModeNoteDisclosureToggle(target)) {
         return;
     }
-    if (isViewModeNoteLink(event.target)) {
+    if (isViewModeNoteLink(target)) {
         return;
     }
-    if (event.target instanceof Element && event.target.closest(SHELL_SELECTOR)) {
+    if (target instanceof Element && target.closest(SHELL_SELECTOR)) {
         return;
     }
-    if (isShellInteractiveTarget(event.target)) {
+    if (isShellInteractiveTarget(target)) {
         return;
     }
-    if (event.target instanceof Element && event.target.closest(`${STATUS_TOGGLE_SELECTOR}, ${MARKDOWN_TASK_TOGGLE_SELECTOR}, .meta-footnote-link, .note-backlinks-link, .note-source-arrow, ${VALUE_BUTTONS_SELECTOR}`)) {
+    if (target instanceof Element && target.closest(`${STATUS_TOGGLE_SELECTOR}, ${MARKDOWN_TASK_TOGGLE_SELECTOR}, .meta-footnote-link, .note-backlinks-link, .note-source-arrow, ${VALUE_BUTTONS_SELECTOR}`)) {
         return;
     }
 
@@ -745,7 +847,7 @@ function handleMoveDragMouseDown(event) {
         return;
     }
 
-    const noteContent = event.target.closest('.note-content');
+    const noteContent = target.closest('.note-content');
     if (!noteContent) {
         return;
     }
@@ -756,6 +858,10 @@ function handleMoveDragMouseDown(event) {
     }
 
     if (noteElement.classList.contains('locked') || noteElement.classList.contains('search-redacted')) {
+        return;
+    }
+    // The window's own note stays where it is: any move would take it out of its window (case 3).
+    if (isWindowsOwnNoteElement(noteElement, floatingWindow)) {
         return;
     }
 
@@ -778,7 +884,21 @@ function handleMoveDragMouseDown(event) {
         ghostRect: null,
         lastX: event.clientX,
         lastY: event.clientY,
+        // The floating window the note is dragged in ({ tree, scrollArea }), or null in the list.
+        floatingWindow,
     };
+    if (floatingWindow !== null) {
+        startDraggingInWindow(floatingWindow.tree);
+        const scrollArea = floatingWindow.scrollArea;
+        const watched = { scrollArea, at: scrollArea.scrollTop, onScroll: null };
+        watched.onScroll = () => {
+            const scrolledBy = scrollArea.scrollTop - watched.at;
+            watched.at = scrollArea.scrollTop;
+            followWindowScroll(scrolledBy);
+        };
+        scrollArea.addEventListener('scroll', watched.onScroll, { passive: true });
+        moduleState.windowDragScroll = watched;
+    }
 }
 
 // A press-and-drag that starts on a picture in a note being viewed moves the note,
@@ -809,12 +929,16 @@ function preventViewedPictureDrag(event) {
 }
 
 function handleMoveDragMouseMove(event) {
+    if (!event) {
+        throw new Error('handleMoveDragMouseMove called without an event object');
+    }
+    continueMoveDrag(event, event.target);
+}
+
+function continueMoveDrag(event, target) {
     const context = moduleState.moveDragContext;
     if (!context) {
         return;
-    }
-    if (!event) {
-        throw new Error('handleMoveDragMouseMove called without an event object');
     }
     if (event.clientX === undefined || event.clientY === undefined) {
         throw new Error(`Invalid MouseEvent: missing coordinates (type: ${event.type})`);
@@ -853,7 +977,10 @@ function handleMoveDragMouseMove(event) {
         }
         if (context.lastX !== event.clientX) context.lastX = event.clientX;
         if (context.lastY !== event.clientY) context.lastY = event.clientY;
-        renderMoveDragIndicators(context, event.target);
+        renderMoveDragIndicators(context, target);
+        if (context.floatingWindow !== null) {
+            scrollWindowAtItsEdges(context, event.clientY);
+        }
     }
 }
 
@@ -896,7 +1023,7 @@ function measureDragGhostRect(noteElement) {
         maxOffsetX = Math.max(0, childContentLeft(previous) - noteRect.left);
     }
     let minOffsetX = 0;
-    if (parentId !== null) {
+    if (parentId !== null && !isRightUnderWindowsOwnNote(noteElement, draggedWindow())) {
         minOffsetX = Math.min(0, DOMUtils.getNoteById(parentId).getBoundingClientRect().left - noteRect.left);
     }
     return { left: noteRect.left, top: noteRect.top, width: noteRect.width, height, minOffsetX, maxOffsetX, minOffsetY, maxOffsetY };
@@ -1015,7 +1142,57 @@ function resolveMoveDragDrop(noteId, dx, dy, clientY, pointerTarget) {
     if (direction === 'right') {
         return { kind: 'indent' };
     }
+    // One level out from right under a floating window's own note is out of the window (case 3).
+    if (isRightUnderWindowsOwnNote(DOMUtils.getNoteById(noteId), draggedWindow())) {
+        return null;
+    }
     return { kind: 'outdent' };
+}
+
+// A drag in a floating window is released: the move is made, or nothing is (too short a drag, a
+// move that is not possible, no connection). Either way the drag lets go of the window.
+function releaseWindowDrag(context, { dx, dy, distanceSq, clientY, target }) {
+    if (distanceSq < MOVE_DRAG_COMMIT_THRESHOLD_SQ || ModeContext.isEditing || !ModeContext.isConnected) {
+        stopWindowDrag();
+        return;
+    }
+    // The drop is resolved as the indicators resolved it, with the drag's own context, which the
+    // release has just cleared.
+    moduleState.moveDragContext = context;
+    const drop = resolveMoveDragDrop(context.noteId, dx, dy, clientY, target);
+    moduleState.moveDragContext = null;
+    if (drop === null) {
+        stopWindowDrag();
+        return;
+    }
+    // The window's drawing stays where the notes are found until the move is made.
+    void CommandGate.run(`mouse.window_drag_${drop.kind}`, async () => {
+        await moveDroppedNoteInWindow(context.noteId, drop);
+    }).finally(stopWindowDrag);
+}
+
+// The floating window the note is being dragged in, or null in the list.
+function draggedWindow() {
+    const context = moduleState.moveDragContext;
+    if (!context) return null;
+    return context.floatingWindow;
+}
+
+// The move a drag in a floating window ends in. The list's own moves also keep the list's page
+// where the note landed and scroll it into view; here the page behind stays as it is, and the
+// window draws the move at its next refresh.
+async function moveDroppedNoteInWindow(noteId, drop) {
+    if (drop.kind === 'indent') {
+        await indentNote(noteId);
+        return;
+    }
+    if (drop.kind === 'outdent') {
+        await outdentNote(noteId);
+        return;
+    }
+    await NotesAPI.moveNote(noteId, drop.siblingId, drop.position, drop.newParentId);
+    const { actionRefreshAndMaybeSelect } = await import('../actions/ui-actions.js');
+    await actionRefreshAndMaybeSelect({ startedAt: performance.now(), context: 'moveDroppedNoteInWindow' });
 }
 
 // Overlay geometry for a resolved drop: the note it is placed relative to, and
@@ -1159,12 +1336,16 @@ function resolveVerticalMoveDestination(noteId, dropY, dragDirection, eventTarge
 }
 
 function handleMoveDragMouseUp(event) {
+    if (!event) {
+        throw new Error('handleMoveDragMouseUp called without an event object');
+    }
+    finishMoveDrag(event, event.target);
+}
+
+function finishMoveDrag(event, target) {
     const context = moduleState.moveDragContext;
     if (!context) {
         return;
-    }
-    if (!event) {
-        throw new Error('handleMoveDragMouseUp called without an event object');
     }
     if (typeof event.button !== 'number') {
         throw new Error(`Invalid MouseEvent: missing button (type: ${event.type})`);
@@ -1191,6 +1372,11 @@ function handleMoveDragMouseUp(event) {
         };
         event.preventDefault();
         event.stopPropagation();
+    }
+
+    if (context.floatingWindow !== null) {
+        releaseWindowDrag(context, { dx, dy, distanceSq, clientY: event.clientY, target });
+        return;
     }
 
     if (distanceSq < MOVE_DRAG_COMMIT_THRESHOLD_SQ) {
@@ -1589,7 +1775,10 @@ function handleClick(event) {
         event.stopPropagation();
         const clearButton = event.target.closest('#root-sort-indicator-clear');
         if (clearButton) {
-            void CommandPalette.setSortMode('normal');
+            // A command, as the date and file chips' ×: a second click while it runs is dropped.
+            void CommandGate.run('rootSortIndicator.clear', async () => {
+                await CommandPalette.setSortMode('normal');
+            });
         }
         return;
     }
@@ -1624,7 +1813,9 @@ function handleClick(event) {
         event.stopPropagation();
         const clearButton = event.target.closest('#untagged-view-indicator-clear');
         if (clearButton) {
-            void CommandPalette.setIsUntaggedView(false);
+            void CommandGate.run('untaggedViewIndicator.clear', async () => {
+                await CommandPalette.setIsUntaggedView(false);
+            });
         }
         return;
     }
@@ -1842,7 +2033,7 @@ function handleClick(event) {
                 initialCaretVisibility: 'visible',
                 clickAnchor: captureClickAnchor(noteElement, event.clientX, event.clientY),
             };
-            if (!ModeContext.isEditingNote(noteId)) {
+            if (!isEditedHere(noteId, noteElement)) {
                 // Don't calculate or save cursor position when entering edit mode
                 // The click position on rendered content (e.g., LaTeX) doesn't map meaningfully
                 // to cursor position in source text
@@ -1953,7 +2144,7 @@ function handleClick(event) {
             initialCaretVisibility: 'visible',
             clickAnchor: captureClickAnchor(noteElement, event.clientX, event.clientY),
         };
-        if (!ModeContext.isEditingNote(noteId)) {
+        if (!isEditedHere(noteId, noteElement)) {
             if (ModeContext.currentNoteId) {
                 // Keys typed while it opens are kept and typed into it (type-ahead-service.js);
                 // only the command that runs opens it (a click right after a mouse-down finds it busy).

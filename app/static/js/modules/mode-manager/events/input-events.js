@@ -1,4 +1,5 @@
 import { half } from '../../half.js';
+import { editedWindowScrollArea, isEditingInWindow } from '../../editing-surface.js';
 import { ApplicationState } from '../../application-state.js';
 import { ModeContextInstance as ModeContext } from '../mode-context.js';
 import * as Logger from '../mode-logger.js';
@@ -15,6 +16,8 @@ import { handleDictationPasteEvent, isDictationRawInsertInProgress, noteDictatio
 
 // The editing caret counts as visible while it is within this distance of the viewport.
 const EDITING_CARET_VIEWPORT_MARGIN_PX = 40;
+// Room kept between the caret and a floating window's edges (or its tag bar).
+const EDITING_CARET_WINDOW_MARGIN_PX = 8;
 
 const moduleState = ApplicationState.createFields('input-events', {
     lastKeyPressed: null,
@@ -57,7 +60,33 @@ function getCaretRectWithin(element) {
     return rect;
 }
 
+// In a floating window (case 5): the caret stays in the window's own scrolling area, above
+// the edited note's tag bar where it sticks to the area's bottom, and the page behind stays still.
+function keepCaretInWindow(editedElement) {
+    let target = getCaretRectWithin(editedElement);
+    if (target === null) target = editedElement.getBoundingClientRect();
+    const area = editedWindowScrollArea();
+    const box = area.getBoundingClientRect();
+    let visibleBottom = box.bottom;
+    const note = editedElement.closest('.note');
+    if (note === null) throw new Error('The edited text is in a note');
+    const tagBar = note.querySelector(':scope > .note-tag-bar');
+    if (tagBar !== null && !tagBar.contains(editedElement)) {
+        visibleBottom = Math.min(visibleBottom, tagBar.getBoundingClientRect().top);
+    }
+    const margin = EDITING_CARET_WINDOW_MARGIN_PX;
+    if (target.bottom > visibleBottom - margin) {
+        area.scrollTop += Math.ceil(target.bottom - (visibleBottom - margin));
+    } else if (target.top < box.top + margin) {
+        area.scrollTop -= Math.ceil(box.top + margin - target.top);
+    }
+}
+
 function ensureEditingCaretVisible(noteContentElement) {
+    if (isEditingInWindow()) {
+        keepCaretInWindow(noteContentElement);
+        return;
+    }
     const caretRect = getCaretRectWithin(noteContentElement);
 
     let targetRect = caretRect;

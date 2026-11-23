@@ -69,6 +69,8 @@ function harness() {
         Logger: { logNoop() {}, logInit() {} },
         half,
         recordCollapse: () => actions.push('collapse'),
+        // No note is dragged in a floating window here (editing-surface.js).
+        startDraggingInWindow() {}, stopDraggingInWindow() {},
         unlessDiagramEditorOpen, resolveDiagramTarget: () => null, openDiagramEditor: () => {},
     };
     const handlers = new Function(...Object.keys(dependencies), `${source}
@@ -89,7 +91,7 @@ function harness() {
 function dragContext(overrides = {}) {
     return {
         noteId: 'note-1', startX: 10, startY: 10, dragActive: false, hasCrossedActivationThreshold: false,
-        ghostRect: null, lastX: 10, lastY: 10, ...overrides,
+        ghostRect: null, lastX: 10, lastY: 10, floatingWindow: null, ...overrides,
     };
 }
 
@@ -174,7 +176,7 @@ test('unrelated and keyboard clicks discard stale suppression without being cons
 
 test('releasing another mouse button does not end a left-button drag', () => {
     const h = harness();
-    h.state.moveDragContext = { noteId: 'note-1', startX: 10, startY: 10, dragActive: false, hasCrossedActivationThreshold: false };
+    h.state.moveDragContext = { noteId: 'note-1', startX: 10, startY: 10, dragActive: false, hasCrossedActivationThreshold: false, floatingWindow: null };
     h.up({ ...event(), button: 2 });
     assert.equal(h.state.moveDragContext.noteId, 'note-1');
     h.up(event());

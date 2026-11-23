@@ -1,3 +1,4 @@
+import { freeGate } from './gate_stand_ins.mjs';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {readFile} from 'node:fs/promises';
@@ -6,15 +7,20 @@ import {constrainFloatingNoteRect, moveFloatingNoteRect} from '../../app/static/
 
 const source = await readFile(new URL('../../app/static/js/modules/mode-manager/services/floating-note-service.js', import.meta.url), 'utf8');
 
+// The server's answer for a window whose note reads `text` (/notes/{id}/floating).
+function ready(revision, text) {
+    return {revision, status: 'ready', structure: [{id: 'root', parentId: null, hash: text}], notes: {root: {content: text}}};
+}
+
 function harness() {
     class Element {
-        constructor() { this.style = {}; this.dataset = {}; this.isConnected = false; this.scrollTop = 0; this.htmlWrites = 0; }
+        constructor() { this.style = {}; this.dataset = {}; this.isConnected = false; this.scrollTop = 0; this.draws = 0; this.html = ''; }
         appendChild(child) { child.isConnected = true; }
         setAttribute() {}
         focus() {}
         remove() { this.isConnected = false; }
         querySelectorAll() { return []; }
-        set innerHTML(value) { this.html = value; this.htmlWrites++; }
+        replaceChildren() { this.html = ''; }
     }
     const requests = [];
     const elements = [];
@@ -31,7 +37,7 @@ function harness() {
         window, document: {getElementById: () => new Element()}, HTMLElement: Element,
         crypto: {randomUUID: () => String(++sequence)},
         NotesAPI: {getFloatingNote: (noteId, revision) => new Promise((resolve, reject) => requests.push({noteId, revision, resolve, reject}))},
-        CommandGate: {isBusy: () => false},
+        CommandGate: freeGate(),
         rethrowUnexpectedError: error => { throw error; },
         createFloatingNoteElements() {
             const entry = Object.fromEntries(['element', 'tree', 'title', 'status', 'scroll'].map(key => [key, new Element()]));
@@ -43,6 +49,14 @@ function harness() {
         hydrateRemoteImageProxies() {}, queueMermaidDiagramRendering: async () => {},
         serverRenderedHtml: html => html,
         watchFoldArrows() {},
+        // No note is edited in a window here (editing-surface.js).
+        editedWindowHost: () => null, recordPress() {}, editNoteInWindow: async () => {}, actionDeselectNote: async () => {},
+        // The notes as the list draws them (floating-note-editing.js): here, the root's text.
+        drawWindowNotes(container, structure, notes) { container.html = notes[structure[0].id].content; container.draws++; },
+        watchFoldability() {}, captureClickAnchor() {}, findNoteContentElement: () => null, collapseNote: async () => {}, expandNote: async () => {},
+        galleryElementOf() {}, galleryNoteIdOf() {}, toggleGalleryOutline: async () => {},
+        // No note is dragged in a window here (mouse-events.js).
+        beginMoveDragInWindow() {}, continueMoveDragInWindow() {}, finishMoveDragInWindow() {}, takeClickAfterMoveDrag: () => false,
     };
     const build = new Function(...Object.keys(dependencies), source.replace(/^import .*;\r?\n/gm, '').replace(/^export /gm, '')
         + '\nreturn {openFloatingNote, closeFloatingNote, closeAllFloatingNotes, refreshFloatingNotes};');
@@ -55,9 +69,9 @@ test('closing all windows discards in-flight plaintext and releases the refresh 
     assert.equal(h.intervals.size, 1);
     h.service.closeAllFloatingNotes();
     h.service.closeAllFloatingNotes();
-    h.requests[0].resolve({revision: 'a', status: 'ready', html: '<p>Do not republish</p>'});
+    h.requests[0].resolve(ready('a', '<p>Do not republish</p>'));
     await pending;
-    assert.equal(h.elements[0].tree.htmlWrites, 0);
+    assert.equal(h.elements[0].tree.draws, 0);
     assert.equal(h.elements[0].element.isConnected, false);
     assert.equal(h.intervals.size, 0);
 });
@@ -65,24 +79,24 @@ test('closing all windows discards in-flight plaintext and releases the refresh 
 test('unchanged windows retain their DOM and deletion/restore refreshes the same window', async () => {
     const h = harness();
     const opened = h.service.openFloatingNote('root');
-    h.requests.shift().resolve({revision: 'a', status: 'ready', html: '<p>Root</p>'});
+    h.requests.shift().resolve(ready('a', '<p>Root</p>'));
     await opened;
     for (const snapshot of [
-        {revision: 'a', status: 'unchanged', html: ''},
-        {revision: 'b', status: 'ready', html: '<p>Root</p>'},
+        {revision: 'a', status: 'unchanged', structure: [], notes: {}},
+        ready('b', '<p>Root</p>'),
     ]) {
         const pending = h.service.refreshFloatingNotes();
         h.requests.shift().resolve(snapshot);
         await pending;
     }
-    assert.equal(h.elements[0].tree.htmlWrites, 1);
+    assert.equal(h.elements[0].tree.draws, 1);
     const deleted = h.service.refreshFloatingNotes();
-    h.requests.shift().resolve({revision: 'c', status: 'deleted', html: ''});
+    h.requests.shift().resolve({revision: 'c', status: 'deleted', structure: [], notes: {}});
     await deleted;
     assert.equal(h.elements[0].tree.html, '');
     assert.equal(h.elements[0].status.textContent, 'This note was deleted.');
     const restored = h.service.refreshFloatingNotes();
-    h.requests.shift().resolve({revision: 'd', status: 'ready', html: '<p>Restored</p>'});
+    h.requests.shift().resolve(ready('d', '<p>Restored</p>'));
     await restored;
     assert.equal(h.elements[0].tree.html, '<p>Restored</p>');
     h.service.closeAllFloatingNotes();
@@ -91,16 +105,16 @@ test('unchanged windows retain their DOM and deletion/restore refreshes the same
 test('refresh calls cannot overlap and a closed window cannot overwrite a reopened one', async () => {
     const h = harness();
     const opening = h.service.openFloatingNote('root');
-    h.requests.shift().resolve({revision: 'a', status: 'ready', html: '<p>First</p>'});
+    h.requests.shift().resolve(ready('a', '<p>First</p>'));
     const id = await opening;
     const refreshing = h.service.refreshFloatingNotes();
     await h.service.refreshFloatingNotes();
     assert.equal(h.requests.length, 1);
     h.service.closeFloatingNote(id);
     const reopening = h.service.openFloatingNote('root');
-    h.requests[1].resolve({revision: 'c', status: 'ready', html: '<p>New window</p>'});
+    h.requests[1].resolve(ready('c', '<p>New window</p>'));
     await reopening;
-    h.requests[0].resolve({revision: 'b', status: 'ready', html: '<p>Old response</p>'});
+    h.requests[0].resolve(ready('b', '<p>Old response</p>'));
     await refreshing;
     assert.equal(h.elements[1].tree.html, '<p>New window</p>');
     h.service.closeAllFloatingNotes();
@@ -109,8 +123,8 @@ test('refresh calls cannot overlap and a closed window cannot overwrite a reopen
 test('malformed responses and internal failures still throw', async () => {
     const h = harness();
     const pending = h.service.openFloatingNote('root');
-    h.requests.shift().resolve({revision: 'a', status: 'ready', html: ''});
-    await assert.rejects(pending, /markup/);
+    h.requests.shift().resolve({revision: 'a', status: 'ready', structure: [], notes: {}});
+    await assert.rejects(pending, /do not match/);
     const refreshing = h.service.refreshFloatingNotes();
     h.requests.shift().reject(new Error('Internal bug'));
     await assert.rejects(refreshing, /Internal bug/);

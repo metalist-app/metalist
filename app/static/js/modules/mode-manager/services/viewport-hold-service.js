@@ -440,7 +440,10 @@ function affinityOfDomPoint(node, offset) {
 
 export function caretPositionAt(x, y) {
     if (typeof document.caretPositionFromPoint === 'function') {
-        const position = document.caretPositionFromPoint(x, y);
+        // Into floating windows' read-only drawings too (their shadow roots), for a click that
+        // edits a note there (floating-note-editing.js).
+        const shadowRoots = [...document.querySelectorAll('.floating-note-window')].map(host => host.shadowRoot);
+        const position = document.caretPositionFromPoint(x, y, { shadowRoots });
         return position === null ? null : { node: position.offsetNode, offset: position.offset };
     }
     if (typeof document.caretRangeFromPoint === 'function') {

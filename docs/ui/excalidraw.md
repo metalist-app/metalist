@@ -48,6 +48,15 @@ Future plan (2026-10-27): charts of super-tag values work exactly like these dia
 - Sessions live in server memory with the undo stacks: they are dropped when the app locks, the namespace changes, or undo history is reset, and after 8 hours or when more than 8 are open. A session dropped this way still keeps its saves; only its undo step is lost.
 - A new diagram's first session records no step of its own: the step that inserted the diagram into its note covers it. One undo removes the diagram and returns the note to how it was; redo brings the diagram back as drawn. Later sessions each add their own step. (Previews of the empty drawing are stored before the editor opens, so a new diagram closed without drawing shows as empty.)
 
+## Copies
+
+The maintainer, 2026-11-22: "if I copy a note that has a diagram in it, just make a new identical diagram". Diagrams are the only attachments edited in place, so they are the only ones where two notes sharing one file shows: redrawing it in one note changed the other.
+
+- **A pasted copy of a note gets its own diagrams.** Copy Note then Paste: each diagram a note still shows is copied for the pasted note (drawing and previews, same name), as the text is. A note that was cut goes on with the diagram it had: no note shows it any more, so nothing is shared (`diagram_copies.snapshot_with_own_diagrams`, called by both paste commands; `file_storage.duplicate_editable_file`).
+- Two notes show one diagram only when its `![[UUID]]` is written in both by hand.
+- Tried and taken out the same day: a Duplicate Diagram menu item (a copy under the original in the same note) and diagrams in the `![[` list. Neither was wanted.
+- `BROWSER_TEST_SUITE=diagram-copies`, `tests/unit/test_diagram_copies.py`.
+
 ## Not Yet Supported
 - Text inside diagrams is not searchable, not used for tags, and not sent to AI.
 - Only the English Excalidraw UI is bundled, and the Liberation Sans and Xiaolai (CJK) fonts are left out.

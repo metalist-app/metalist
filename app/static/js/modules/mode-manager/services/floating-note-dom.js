@@ -22,11 +22,12 @@ export function createFloatingNoteElements(id) {
 
     const header = document.createElement('header');
     header.className = 'floating-note-header';
-    const title = document.createElement('a');
+    // The note's first line, as text: the whole bar drags the window (the maintainer, 2026-11-22:
+    // a title that led to the note's own view was clicked by accident, and a note is edited in
+    // its window now).
+    const title = document.createElement('span');
     title.className = 'floating-note-title';
-    title.href = '#';
-    title.textContent = '↗ Loading…';
-    title.setAttribute('aria-disabled', 'true');
+    title.textContent = 'Loading…';
     const dragHandle = document.createElement('span');
     dragHandle.className = 'floating-note-drag-handle';
     dragHandle.textContent = '⠿';
@@ -49,7 +50,10 @@ export function createFloatingNoteElements(id) {
     status.textContent = 'Loading…';
     const tree = document.createElement('div');
     tree.className = 'floating-note-tree';
-    scroll.append(status, tree);
+    // While a note in the window is edited, its notes are in the page and show here
+    // (floating-note-editing.js).
+    const editingSlot = document.createElement('slot');
+    scroll.append(status, tree, editingSlot);
     const resize = document.createElement('button');
     resize.type = 'button';
     resize.className = 'floating-note-resize';
@@ -66,6 +70,8 @@ export function getFloatingNoteTitle(tree) {
     // A password is its dots in the title, even while its eye shows it in the note.
     const preview = content.cloneNode(true);
     for (const password of preview.querySelectorAll('.meta-credential-password .meta-credential-value')) password.textContent = CREDENTIAL_MASK;
+    // A gallery's grid is the pictures of the notes under it, not the note's own text.
+    for (const gallery of preview.querySelectorAll('.meta-gallery')) gallery.remove();
     const text = preview.textContent.replace(/\s+/g, ' ').trim();
     if (text.length === 0) return 'Untitled note';
     return text.length > FLOATING_NOTE_TITLE_MAX_CHARS

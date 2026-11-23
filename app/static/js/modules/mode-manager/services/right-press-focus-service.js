@@ -1,3 +1,4 @@
+import { findNoteElement } from '../../editing-surface.js';
 import { ApplicationState, stateValuesEqual } from '../../application-state.js';
 import { ModeContextInstance as ModeContext } from '../mode-context.js';
 import { captureEditingFocus } from './viewport-hold-service.js';
@@ -32,7 +33,7 @@ export function rememberEditingFocusAtRightPress(event) {
     let next = null;
     const noteId = ModeContext.currentNoteId;
     if (ModeContext.isEditing && typeof noteId === 'string' && noteId.length > 0) {
-        const noteElement = document.querySelector(`.note[data-note-id="${noteId}"]`);
+        const noteElement = findNoteElement(noteId);
         if (!(noteElement instanceof HTMLElement)) {
             throw new Error(`Edited note element missing at a right press: ${noteId}`);
         }

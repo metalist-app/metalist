@@ -1,3 +1,5 @@
+import { findListNoteElement, isEditingInWindow, markNoteEditedInWindow, noticeListRefreshedWhileEditingInWindow } from '../../editing-surface.js';
+
 import { ApplicationState } from '../../application-state.js';
 import { ModeContextInstance as ModeContext } from '../mode-context.js';
 import * as Logger from '../mode-logger.js';
@@ -109,7 +111,10 @@ function noticeClosedReferencePages(snapshot) {
         return;
     }
     // After this view is applied: taking the tabs waits for view requests in flight.
-    void import('../events/keyboard-events.js').then((keyboardEvents) => keyboardEvents.adoptClosedReferencePages());
+    // In a turn of its own, which is never skipped: the tabs must follow the server.
+    void import('../events/keyboard-events.js').then((keyboardEvents) => CommandGate.queueBackground(
+        'referencePages.closedByServer', () => keyboardEvents.adoptClosedReferencePages(),
+    ));
 }
 
 
@@ -162,6 +167,13 @@ export async function waitForViewRequestIdle() {
     }
 }
 
+// Lets a view request in flight land (its response applied); true when there was one to wait for.
+export async function letViewRequestLand() {
+    if (!moduleState.viewRequestInFlight) return false;
+    await waitForViewRequestIdle();
+    return true;
+}
+
 // Whether a view request is on its way. Only the infinite-scroll poll asks: it repeats every
 // POLL_INTERVAL_MS, so it skips a round rather than wait.
 export function isViewRequestInFlight() {
@@ -172,23 +184,19 @@ export async function actionRefreshAndMaybeSelect(options) {
     if (options === null || typeof options !== 'object') {
         throw new Error('actionRefreshAndMaybeSelect requires options object');
     }
+    // Every list refresh runs in a turn (turns.js): asked for in none, it takes one, and so never
+    // runs beside a command or other background work that started meanwhile.
+    if (!CommandGate.isTurnTaken()) {
+        let asker = 'refresh';
+        if (typeof options.context === 'string' && options.context !== '') asker = options.context;
+        CommandGate.noteRefreshOutsideTurns(asker);
+        return CommandGate.queueBackground(`refresh.${asker}`, () => actionRefreshAndMaybeSelect(options));
+    }
     Logger.logAction('refresh_and_maybe_select', { 
         noteId: ModeContext.currentNoteId,
         isEditing: ModeContext.isEditing
     });
 
-    let noteId = null;
-    if (ModeContext.isEditing) {
-        noteId = ModeContext.currentNoteId;
-        if (typeof noteId !== 'string' || noteId.length === 0) {
-            throw new Error('Invariant violation: ModeContext.isEditing is true but currentNoteId is missing');
-        }
-    }
-    const requestTabId = ModeContext.activeTabId;
-    const requestSearchQuery = ModeContext.getExecutedSearchQuery(requestTabId);
-    if (typeof requestSearchQuery !== 'string') {
-        throw new Error('ModeContext.getExecutedSearchQuery() must return a string');
-    }
     if (Object.prototype.hasOwnProperty.call(options, 'requireExecution')) {
         throw new Error('requireExecution is gone: every refresh waits for a request in flight, then runs');
     }
@@ -255,8 +263,23 @@ export async function actionRefreshAndMaybeSelect(options) {
     // that request was built from the state before the caller's change, and callers use what
     // this one returns (docs/ui/state-handling.md, "Refreshes in flight"). Dropping it crashed
     // switching notes and left deleted notes on screen (2026-10-26).
-    if (moduleState.viewRequestInFlight) {
+    while (moduleState.viewRequestInFlight) {
         await waitForViewRequestIdle();
+    }
+
+    // Read only now: what went first may have changed the tab shown or left edit mode, and a
+    // request for the tab as it was came back to another ("arrived after the active tab changed").
+    let noteId = null;
+    if (ModeContext.isEditing) {
+        noteId = ModeContext.currentNoteId;
+        if (typeof noteId !== 'string' || noteId.length === 0) {
+            throw new Error('Invariant violation: ModeContext.isEditing is true but currentNoteId is missing');
+        }
+    }
+    const requestTabId = ModeContext.activeTabId;
+    const requestSearchQuery = ModeContext.getExecutedSearchQuery(requestTabId);
+    if (typeof requestSearchQuery !== 'string') {
+        throw new Error('ModeContext.getExecutedSearchQuery() must return a string');
     }
 
     if (resetViewCacheBeforeFetch) {
@@ -344,8 +367,11 @@ export async function actionRefreshAndMaybeSelect(options) {
         }
         let editingFocus = null;
         let isFocusElsewhere = false;
-        if (keepEditingFocus && noteId !== null && ModeContext.isEditing) {
-            const editedNote = document.querySelector(`.note[data-note-id="${noteId}"]`);
+        // A note edited in a floating window: the list draws it as a note edited elsewhere and
+        // leaves the editing to the window (floating-note-editing.js).
+        const editsInWindow = noteId !== null && isEditingInWindow();
+        if (keepEditingFocus && noteId !== null && ModeContext.isEditing && !editsInWindow) {
+            const editedNote = findListNoteElement(noteId);
             if (editedNote instanceof HTMLElement) {
                 editingFocus = captureEditingFocus(editedNote);
                 isFocusElsewhere = leaveFocusElsewhere && !editedNote.contains(document.activeElement);
@@ -367,10 +393,13 @@ export async function actionRefreshAndMaybeSelect(options) {
         holdViewportRoot(viewportRoot);
 
         // Removal animations retain DOM nodes after the diff removes their view membership.
-        const editingNoteElement = noteId && ModeContext.hasNoteHash(noteId)
-            ? document.querySelector(`.note[data-note-id="${noteId}"]`)
+        const editingNoteElement = noteId && ModeContext.hasNoteHash(noteId) && !editsInWindow
+            ? findListNoteElement(noteId)
             : null;
-        syncTagBar(editingNoteElement);
+        markNoteEditedInWindow(snapshot.windowEditingNoteId);
+        if (!editsInWindow) {
+            syncTagBar(editingNoteElement);
+        }
 
         // If this is initial page load, fade in the entire app
         if (ModeContext.isInitialPageLoad) {
@@ -384,7 +413,12 @@ export async function actionRefreshAndMaybeSelect(options) {
         let contentHtml = null;
         let result = null;
 
-        if (noteId) {
+        if (editsInWindow) {
+            // The window's editor holds the note; its text is what the editing caller compares.
+            result = DOMUtils.getNoteContentHTML(DOMUtils.getNoteById(noteId));
+            // A note added or moved there: the window draws its notes again (floating-note-editing.js).
+            noticeListRefreshedWhileEditingInWindow();
+        } else if (noteId) {
             const noteElement = editingNoteElement;
             if (!noteElement) {
                 Logger.logAction('refresh_hidden_filtered_editing_note', {

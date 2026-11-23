@@ -36,6 +36,7 @@ from app.config import PASSWORD_MIN_ZXCVBN_SCORE
 from app.security.sensitive_cache import SensitiveMemo
 from app.services.content_formatting import (
     ScopedPasswordRegion,
+    has_scoped_password_tag,
     is_password_note,
     scoped_password_regions,
     text_shown_without_passwords,
@@ -73,8 +74,10 @@ WEAK_THRESHOLDS = (WEAK_BELOW_USUAL, WEAK_BELOW_STRICT)
 # A password is old when its note has not changed for a year.
 DAYS_IN_A_YEAR = 365
 OLD_AFTER = timedelta(days=DAYS_IN_A_YEAR)
-# zxcvbn grows slow on long input and judges a password by its start anyway.
-_ZXCVBN_MAX_CHARACTERS = 100
+# zxcvbn grows slow on long input, judges a password by its start anyway, and refuses more
+# than its own limit (72 by default, raising ValueError): the limit is handed to it, so the
+# two cannot differ.
+_ZXCVBN_MAX_CHARACTERS = 72
 # The words of the note's label and tags that zxcvbn counts against a password; enough for a site
 # name and its tags.
 _MAX_CONTEXT_WORDS = 40
@@ -139,6 +142,11 @@ def passwords_in(record: NoteRecord) -> List[FoundPassword]:
             return []
         return [FoundPassword(note_id=record.id, kind=WHOLE_NOTE, region_index=0, value=value,
                               can_replace=True, is_kept_after_replacing=False)]
+    # Its tags decide whether its text can hold a password. Most notes' cannot, and reading every
+    # note's text to find that out took seconds on a large vault, each time the reminder asked
+    # for the count (problem report 2026-11-22, "slow to expand note").
+    if not has_scoped_password_tag(record.tags):
+        return []
     text = _plain_text(record)
     regions = scoped_password_regions(text, record.tags)
     is_kept = _REPLACED_LINE.match(text) is not None
@@ -189,7 +197,7 @@ def _score(value: str, context_words: Sequence[str]) -> int:
     is_known, known = _remembered_scores.lookup(key)
     if is_known:
         return int(known)
-    score = int(zxcvbn(key[0], user_inputs=list(context_words))["score"])
+    score = int(zxcvbn(key[0], user_inputs=list(context_words), max_length=_ZXCVBN_MAX_CHARACTERS)["score"])
     _remembered_scores.store(key, score)
     return score
 

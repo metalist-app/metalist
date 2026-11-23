@@ -1,3 +1,4 @@
+import { gateWithTheTurn } from './gate_stand_ins.mjs';
 import { ApplicationState } from '../../app/static/js/modules/application-state.js';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -44,6 +45,7 @@ function refreshHarness({ isRemoved, isAnimated, isFullSnapshot }) {
         setCurrentNoteId(value) { this.currentNoteId = value; },
     };
     const dependencies = {
+        CommandGate: gateWithTheTurn(),
         ModeContext,
         setSearchHighlightPhrases() {},
         // No reference pages closed with their notes in these views.
@@ -51,6 +53,8 @@ function refreshHarness({ isRemoved, isAnimated, isFullSnapshot }) {
         recordNotesShown() {},
         recordEditedRootMovedElsewhere() {},
         recordLockedRoots() {},
+        // No note is edited in a floating window here (editing-surface.js).
+        isEditingInWindow: () => false, markNoteEditedInWindow() {},
         noticeRefusedEdit() {},
         tellOtherTabsWhatIsEdited() {},
         moduleState: ApplicationState.createFields("test.refresh", { viewRequestInFlight: false }),
@@ -58,6 +62,7 @@ function refreshHarness({ isRemoved, isAnimated, isFullSnapshot }) {
         NotesAPI: { async fetchView() { return { snapshot }; } },
         CONFIG: { DEBUG: { LOG_API_CALLS: false }, EDITOR: { DEFAULT_CURSOR_POSITION: 'START' } },
         document: { querySelector: () => isElementPresent ? noteElement : null },
+        findListNoteElement: () => isElementPresent ? noteElement : null,
         console: { log() {} },
         applyDifferentialView() {
             if (isRemoved) {

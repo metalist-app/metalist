@@ -1,5 +1,6 @@
 import { restoreOldeWords } from './skin-olde-words.js';
 import { CONFIG } from './config.js';
+import { findNoteElement } from './editing-surface.js';
 
 export const DOMUtils = {
     getNoteContent(noteElement) {
@@ -51,7 +52,7 @@ export const DOMUtils = {
         if (!noteId) {
             throw new Error('Note ID is required');
         }
-        const note = document.querySelector(`.note[data-note-id="${noteId}"]`);
+        const note = findNoteElement(noteId);
         if (!note) {
             throw new Error(`Note not found: ${noteId}`);
         }
