@@ -11,8 +11,72 @@ export async function installRequestMonitor(page) {
     // saw MetaList busy.
     // open: the paths of the requests in flight; lastSaidBusyAt: when a quiet wait last said in
     // the console what kept MetaList busy (isAppIdle).
-    const requests = {inFlight: 0, lastActivityAt: Date.now(), open: [], lastSaidBusyAt: 0};
+    // waiting: the work the page has put off and not yet done, by its timer's or frame's id: a
+    // timer of at most SOON_MS and every animation frame asked for. While any waits, MetaList is
+    // not idle: that is a fact, where a quiet wait alone guesses that 300 ms is long enough for
+    // late work to have started (docs/future-plans/one-writer-refactoring.md, idea 5). Longer
+    // timers are not work about to happen (a message that leaves after some seconds, a watchdog);
+    // work that repeats (setInterval: the status check, the infinite scroll's look) is not counted,
+    // and what it starts is, as a request or a turn.
+    const SOON_MS = 750;
+    const requests = {inFlight: 0, lastActivityAt: Date.now(), open: [], lastSaidBusyAt: 0, waiting: new Map()};
     Object.defineProperty(window, '__metalistRequests', {value: requests});
+    const pageSetTimeout = window.setTimeout;
+    const pageClearTimeout = window.clearTimeout;
+    const pageRequestFrame = window.requestAnimationFrame;
+    const pageCancelFrame = window.cancelAnimationFrame;
+    const done = key => {
+      if (!requests.waiting.delete(key)) return;
+      requests.lastActivityAt = Date.now();
+    };
+    // Whether MetaList put the work off, by where the call came from: its modules are served
+    // under /static/. A suite's own watcher in the page (a frame loop that samples positions) is
+    // not MetaList's work. One timer is MetaList's and still not counted: the wait of a change
+    // made elsewhere (live-changes-service.js, retryLater), which looks again every 250 ms for as
+    // long as a dialog, a menu or the find bar is open; MetaList says itself when such a change is
+    // about to be shown (isChangeAboutToBeShown, asked in isAppIdle).
+    const isMetaListsOwn = () => {
+      const from = new Error().stack;
+      return from.includes('/static/') && !from.includes('retryLater');
+    };
+    window.setTimeout = (work, delay, ...rest) => {
+      const delayMs = Number(delay) > 0 ? Number(delay) : 0;
+      if (typeof work !== 'function' || delayMs > SOON_MS || !isMetaListsOwn()) return pageSetTimeout(work, delay, ...rest);
+      const id = pageSetTimeout((...args) => {
+        done(`timer ${id}`);
+        work(...args);
+      }, delay, ...rest);
+      requests.waiting.set(`timer ${id}`, `a ${delayMs} ms timer for ${work.name === '' ? 'unnamed work' : work.name}`);
+      return id;
+    };
+    window.clearTimeout = id => {
+      done(`timer ${id}`);
+      pageClearTimeout(id);
+    };
+    window.requestAnimationFrame = work => {
+      if (!isMetaListsOwn()) return pageRequestFrame(work);
+      const id = pageRequestFrame(time => {
+        done(`frame ${id}`);
+        work(time);
+      });
+      requests.waiting.set(`frame ${id}`, `a frame for ${work.name === '' ? 'unnamed work' : work.name}`);
+      return id;
+    };
+    window.cancelAnimationFrame = id => {
+      done(`frame ${id}`);
+      pageCancelFrame(id);
+    };
+    // Resolves once the browser has drawn `frames` more frames: what a change of the window's
+    // size or of a style needs before the page shows it, and no work of MetaList's (untilIdle).
+    requests.drawn = frames => new Promise(resolve => {
+      let left = frames;
+      const next = () => {
+        left -= 1;
+        if (left <= 0) resolve();
+        else pageRequestFrame(next);
+      };
+      pageRequestFrame(next);
+    });
     const pageFetch = window.fetch;
     const changed = delta => {
       requests.inFlight += delta;
@@ -41,15 +105,15 @@ export async function installRequestMonitor(page) {
   });
 }
 
-// Runs in the page. MetaList is idle: nothing is loading, no command is running,
-// no search is waiting for its typing delay and no dictation paste is being
-// cleaned up (those two run outside CommandGate). With `quiet`, it has also been
-// quiet for quiet.quietMs since the wait started at quiet.startedAt: idle at every
-// check, no request in flight, none started or ended, and nothing else loading
-// (images, a floating window's stylesheets, fonts). That covers what MetaList
-// sends outside CommandGate after a command (saving the tab state 300 ms after a
-// search, recording a view, loading suggestions) and work a timer starts within
-// the window (as page.waitForNetworkIdle, the window starts no earlier than the wait).
+// Runs in the page. MetaList is idle: nothing is loading, no command or background work has the
+// turn, no search is waiting for its typing delay, no dictation paste is being cleaned up and no
+// change made elsewhere is about to be shown. With `quiet` (a wait that began at
+// quiet.startedAt), it has also finished everything it put off: no request is in flight, no timer
+// or animation frame of MetaList's own is waiting (installRequestMonitor counts them), and nothing
+// else is loading (images, a floating window's stylesheets, fonts). That is a fact, where
+// quiet.quietMs was a guess at how long late work takes to start (saving the tab state 300 ms
+// after a search, recording a view, loading suggestions): the time is no longer read
+// (docs/future-plans/one-writer-refactoring.md, idea 5).
 // MetaList loads no image lazily, so every image completes (a broken one too).
 async function isAppIdle(quiet) {
   const {ModeContextInstance: mode} = await import('/static/js/modules/mode-manager/mode-context.js');
@@ -66,12 +130,15 @@ async function isAppIdle(quiet) {
   else if (CommandGate.isTurnTaken()) busyWith.push('background work has the turn');
   if (isDebouncedSearchPending()) busyWith.push('a typed search waits to run');
   if (isDictationCleanupInProgress()) busyWith.push('a dictation paste is being cleaned up');
+  const {isChangeAboutToBeShown} = await import('/static/js/modules/mode-manager/services/live-changes-service.js');
+  if (isChangeAboutToBeShown()) busyWith.push('a change made elsewhere is about to be shown');
   if (quiet === null) return busyWith.length === 0;
   const requests = window.__metalistRequests;
   if (requests === undefined) throw new Error('installRequestMonitor must run before the page loads');
   // A floating note window is the one shadow root, with its own stylesheets and images.
   const roots = [document, ...[...document.querySelectorAll('.floating-note-window')].map(host => host.shadowRoot)];
   if (requests.inFlight > 0) busyWith.push(`requests in flight: ${requests.open.join(', ')}`);
+  if (requests.waiting.size > 0) busyWith.push(`work put off: ${[...new Set(requests.waiting.values())].join(', ')}`);
   if (document.fonts.status === 'loading') busyWith.push('a font is loading');
   for (const root of roots) {
     for (const image of root.querySelectorAll('img')) {
@@ -115,24 +182,61 @@ async function isAppIdle(quiet) {
     }
     return false;
   }
-  return Date.now() - Math.max(requests.lastActivityAt, quiet.startedAt) >= quiet.quietMs;
+  // Idle is a fact now (nothing running, in flight or put off), so no time is waited on top of
+  // it: quiet.quietMs was a guess at how long late work takes to start, and is no longer read.
+  // The suites still pass it; it goes when their fixed pauses do.
+  return true;
 }
 
 // The one definition of idle the browser suites wait on, so a new idle condition
 // is added once.
 export async function waitForAppIdle(page) {
-  await page.waitForFunction(isAppIdle, {}, null);
+  await untilIdle(page, null, page.getDefaultTimeout());
+}
+
+// Asked from here, not by a watcher in the page: page.waitForFunction watches with the page's own
+// timers and frames, which isAppIdle counts as work put off. Each question stands alone, so a
+// page that loads anew between two of them is simply asked again.
+const ASK_EVERY_MS = 50;
+const FRAMES_DRAWN = 2;
+async function untilIdle(page, quiet, timeoutMs) {
+  const startedAt = Date.now();
+  // Idle, and still idle once the browser has drawn: a window resized or a style changed just
+  // before is laid out in the next frames, and what that starts (an observer's work) is seen.
+  // A page opened without installRequestMonitor counts no timers and has no frames to wait for.
+  const idleAndDrawn = async () => {
+    if (!(await page.evaluate(isAppIdle, quiet))) return false;
+    const isDrawn = await page.evaluate(async frames => {
+      if (window.__metalistRequests === undefined) return false;
+      await window.__metalistRequests.drawn(frames);
+      return true;
+    }, FRAMES_DRAWN);
+    if (!isDrawn) return true;
+    return page.evaluate(isAppIdle, quiet);
+  };
+  while (!(await idleAndDrawn())) {
+    if (Date.now() - startedAt > timeoutMs) {
+      // What the page still holds, so the failure says what never finished.
+      const held = await page.evaluate(() => {
+        const requests = window.__metalistRequests;
+        if (requests === undefined) return {putOff: [], requests: []};
+        return {putOff: [...new Set(requests.waiting.values())], requests: [...requests.open]};
+      });
+      throw new Error(`MetaList was not idle within ${timeoutMs} ms: ${JSON.stringify(held)}`);
+    }
+    await new Promise(resolve => setTimeout(resolve, ASK_EVERY_MS));
+  }
 }
 
 // MetaList is idle and has been quiet for quietMs (see isAppIdle): what a step
 // waits for before it reloads, reads the server, or checks that nothing else changes.
 export async function waitForAppQuiet(page, quietMs) {
-  await page.waitForFunction(isAppIdle, {}, {quietMs, startedAt: Date.now()});
+  await untilIdle(page, {quietMs, startedAt: Date.now()}, page.getDefaultTimeout());
 }
 
 // waitForAppQuiet, failing after timeoutMs instead of the page's default timeout.
 export async function waitForAppQuietWithin(page, quietMs, timeoutMs) {
-  await page.waitForFunction(isAppIdle, {timeout: timeoutMs}, {quietMs, startedAt: Date.now()});
+  await untilIdle(page, {quietMs, startedAt: Date.now()}, timeoutMs);
 }
 
 // The page has stopped moving: MetaList is idle, its requests are quiet, and for

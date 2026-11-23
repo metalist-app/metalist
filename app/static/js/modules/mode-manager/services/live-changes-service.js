@@ -142,6 +142,20 @@ function reasonToWait() {
     return '';
 }
 
+// What a change waits for that only the user ends: it may wait as long as they like.
+const HELD_BY_THE_USER = ['hidden', 'dialog', 'menu', 'find', 'drag'];
+
+/**
+ * Whether a change made elsewhere is being shown or will be within moments: one is known, and
+ * nothing the user holds open keeps it waiting. The browser suites ask, to know that the page has
+ * finished (browser-app-idle.mjs); a change waiting behind an open dialog is not about to be shown.
+ */
+export function isChangeAboutToBeShown() {
+    if (moduleState.isApplying) return true;
+    if (!moduleState.hasNotesChange && !moduleState.hasContextsChange) return false;
+    return !HELD_BY_THE_USER.includes(reasonToWait());
+}
+
 function retryLater() {
     if (moduleState.retryTimer !== null) {
         return;

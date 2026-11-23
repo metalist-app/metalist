@@ -106,6 +106,26 @@ Before the second pass this was the main proposal: a queue in the browser throug
 
 Browser suites guess that MetaList is done by waiting for 300 ms of quiet (598 calls) or by sleeping a fixed time (393 calls). With answers applied in order, "nothing is waiting to be applied and no request is in flight" is a fact the app can state, and every suite waits on that one thing. Nearly free after idea 4.
 
+**Built 2026-11-22, in the suites' harness (`scripts/browser-app-idle.mjs`), not in the app.** MetaList has finished when all of this holds, and still holds once the browser has drawn two more frames:
+
+- no command or background work has the turn (`turns.js`), and nothing is loading;
+- no request is in flight;
+- MetaList has put off no work: the harness counts every timer of at most 750 ms and every animation frame the page asks for, by wrapping `setTimeout` and `requestAnimationFrame` before any page script runs, so a timer added later is counted without registering itself;
+- no change made elsewhere is about to be shown (`isChangeAboutToBeShown`, live-changes-service.js, the one addition to the app);
+- no image, font or stylesheet is loading.
+
+No time is waited on top: the `quietMs` the suites pass is no longer read, and goes when their fixed pauses do.
+
+What it took to get there, each found by a suite that then never became idle or failed:
+
+- **A suite's own watcher is not MetaList's work.** Several suites run a frame loop in the page to sample positions. Only work put off by MetaList's own modules counts, told by where the call came from (`/static/` in its stack).
+- **Work that waits for the user is not about to happen.** A change made elsewhere retries every 250 ms for as long as a dialog, a menu or the find bar is open. That timer is not counted; the app says whether a change is about to be shown.
+- **A resized window is no work of MetaList's.** The layout follows in the next frames, hence the two drawn frames.
+- **The harness must not watch with the page's timers.** `page.waitForFunction` does, and would count itself: the harness asks from outside, every 50 ms.
+- **Measure on a quiet machine.** Two whole-suite runs were made while the Mac rendered something else (load above 100): the server stalled and eight suites failed for that alone. A run's failures mean nothing until the load has been looked at.
+
+Not done: the 421 fixed pauses in the suite files, and removing the unread `quietMs` from 95 of them. Checked so far in Chrome, suite by suite; the first whole run in both browsers is GitHub's.
+
 ### 6. Move decisions out of the big event files
 
 The event files mix "what key was pressed" with "what should happen". Moving the second part into small modules a test can import (as the many 20 to 130-line policy files already do) brings the most changed code under unit tests. It also retires the tests that read source files as text (71 files, 34 of which run nothing), which break on a rename and cannot catch wrong behavior. Done file by file, whenever an event file is being changed anyway; idea 1 already takes 13 of the whole-copy saves out of `keyboard-events.js`.
